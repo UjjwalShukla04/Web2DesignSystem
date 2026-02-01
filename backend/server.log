@@ -1,0 +1,76 @@
+[2026-02-01T09:42:22.596Z] SERVER STARTING VERSION 2
+[2026-02-01T09:44:46.556Z] SERVER STARTING VERSION 2
+[2026-02-01T09:44:53.509Z] [SCRAPE] Request received for URL: https://example.com
+[2026-02-01T09:44:54.799Z] [SCRAPE] Success. Found 1 sections.
+[2026-02-01T09:44:54.812Z] [GENERATE] Request received
+[2026-02-01T09:44:55.684Z] [ERROR] [GENERATE] Error: Error: Failed to generate component: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent: [404 Not Found] models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+    at generateComponent (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\generator.ts:80:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:59:18)
+[2026-02-01T09:45:53.449Z] SERVER STARTING VERSION 2
+[2026-02-01T09:45:59.154Z] [SCRAPE] Request received for URL: https://example.com
+[2026-02-01T09:46:00.042Z] [SCRAPE] Success. Found 1 sections.
+[2026-02-01T09:46:00.056Z] [GENERATE] Request received
+[2026-02-01T09:46:00.817Z] [ERROR] [GENERATE] Error: Error: Failed to generate component: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent: [404 Not Found] models/gemini-1.5-flash-001 is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+    at generateComponent (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\generator.ts:80:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:59:18)
+[2026-02-01T09:46:23.975Z] SERVER STARTING VERSION 2
+[2026-02-01T09:46:30.075Z] [SCRAPE] Request received for URL: https://example.com
+[2026-02-01T09:46:31.075Z] [SCRAPE] Success. Found 1 sections.
+[2026-02-01T09:46:31.088Z] [GENERATE] Request received
+[2026-02-01T09:46:31.844Z] [ERROR] [GENERATE] Error: Error: Failed to generate component: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent: [404 Not Found] models/gemini-pro is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+    at generateComponent (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\generator.ts:80:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:59:18)
+[2026-02-01T09:47:19.397Z] SERVER STARTING VERSION 2
+[2026-02-01T09:47:24.896Z] [SCRAPE] Request received for URL: https://example.com
+[2026-02-01T09:47:25.732Z] [SCRAPE] Success. Found 1 sections.
+[2026-02-01T09:47:25.744Z] [GENERATE] Request received
+[2026-02-01T09:47:26.423Z] [ERROR] [GENERATE] Error: Error: Failed to generate component: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+Please retry in 33.956427546s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"33s"}]
+    at generateComponent (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\generator.ts:80:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:59:18)
+[2026-02-01T09:47:55.590Z] SERVER STARTING VERSION 2
+[2026-02-01T09:48:02.079Z] [SCRAPE] Request received for URL: https://example.com
+[2026-02-01T09:48:03.135Z] [SCRAPE] Success. Found 1 sections.
+[2026-02-01T09:48:03.146Z] [GENERATE] Request received
+[2026-02-01T09:48:11.685Z] [GENERATE] Success.
+[2026-02-01T09:51:26.478Z] [SCRAPE] Request received for URL: https://ticker.finology.in/
+[2026-02-01T09:51:32.989Z] [SCRAPE] Success. Found 2 sections.
+[2026-02-01T09:51:36.578Z] [GENERATE] Request received
+[2026-02-01T09:51:50.100Z] [GENERATE] Success.
+[2026-02-01T09:53:02.019Z] [GENERATE] Request received
+[2026-02-01T09:53:13.764Z] [GENERATE] Success.
+[2026-02-01T09:53:54.370Z] [GENERATE] Request received
+[2026-02-01T09:54:06.910Z] [GENERATE] Success.
+[2026-02-01T09:54:19.595Z] [SCRAPE] Request received for URL: https://ticker.finology.in/
+[2026-02-01T09:54:25.118Z] [SCRAPE] Success. Found 2 sections.
+[2026-02-01T09:54:27.035Z] [GENERATE] Request received
+[2026-02-01T09:54:55.570Z] [GENERATE] Success.
+[2026-02-01T09:56:05.292Z] [GENERATE] Request received
+[2026-02-01T09:56:24.656Z] [GENERATE] Success.
+[2026-02-01T10:07:31.131Z] [GENERATE] Request received
+[2026-02-01T10:07:54.558Z] [GENERATE] Success.
+[2026-02-01T10:09:30.595Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T10:09:36.189Z] [SCRAPE] Success. Found 5 sections.
+[2026-02-01T10:09:39.689Z] [GENERATE] Request received
+[2026-02-01T10:09:59.048Z] [GENERATE] Success.
+[2026-02-01T10:25:51.759Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T10:25:57.213Z] [SCRAPE] Success. Found 5 sections.
+[2026-02-01T10:27:17.133Z] [GENERATE] Request received
+[2026-02-01T10:27:29.597Z] [GENERATE] Success.
+[2026-02-01T10:34:25.119Z] [SCRAPE] Request received for URL: https://ticker.finology.in/
+[2026-02-01T10:34:32.992Z] [SCRAPE] Success. Found 2 sections.
+[2026-02-01T10:34:37.789Z] [GENERATE] Request received
+[2026-02-01T10:35:06.514Z] [GENERATE] Success.
+[2026-02-01T10:43:19.232Z] [SCRAPE] Request received for URL: https://ticker.finology.in/
+[2026-02-01T10:43:25.282Z] [SCRAPE] Success. Found 2 sections.
+[2026-02-01T10:43:26.660Z] [GENERATE] Request received
+[2026-02-01T10:43:54.908Z] [GENERATE] Success.
+[2026-02-01T10:44:35.631Z] [GENERATE] Request received
+[2026-02-01T10:44:52.357Z] [GENERATE] Success.

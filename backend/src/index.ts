@@ -18,6 +18,21 @@ app.get("/", (req, res) => {
   res.send("Scraper Backend is Running!");
 });
 
+// --- Browser Health Check (Public, for diagnostics) ---
+import { chromium } from "playwright";
+app.get("/health/browser", async (req, res) => {
+  try {
+    const browser = await chromium.launch({ 
+      headless: true, 
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
+    });
+    await browser.close();
+    res.send("Browser launch successful!");
+  } catch (error: any) {
+    res.status(500).send(`Browser launch failed: ${error.message}`);
+  }
+});
+
 // --- Authentication Middleware ---
 app.use((req, res, next) => {
   const adminSecret = process.env.API_SECRET;

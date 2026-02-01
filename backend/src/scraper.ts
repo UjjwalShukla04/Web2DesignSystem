@@ -12,7 +12,12 @@ export async function scrapeWebsite(url: string): Promise<ScrapedSection[]> {
   console.log(`Launching browser to scrape: ${url}`);
   const browser = await chromium.launch({ 
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Required for many containerized environments (Render, Docker)
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', // Vital for Docker/Render (avoids /dev/shm size limits)
+      '--disable-gpu',           // Vital for headless environments
+    ] 
   });
   const page = await browser.newPage();
 

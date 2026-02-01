@@ -454,6 +454,9 @@ const ComponentEditor = ({
   );
 };
 
+// --- Constants ---
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
 // --- Main App ---
 export default function Home() {
   const [step, setStep] = useState<"INPUT" | "SELECT" | "EDIT">("INPUT");
@@ -484,9 +487,18 @@ export default function Home() {
   const handleScrape = async (url: string) => {
     setIsLoading(true);
     try {
-      const { data } = await axios.post("http://localhost:4000/api/scrape", {
-        url,
-      });
+      const { data } = await axios.post(
+        `${API_URL}/api/scrape`,
+        {
+          url,
+          apiKey, // Pass apiKey in body just in case needed for scraping limits
+        },
+        {
+          headers: {
+            "x-api-secret": accessCode,
+          },
+        },
+      );
       setSections(data.sections);
       setStep("SELECT");
     } catch (error) {

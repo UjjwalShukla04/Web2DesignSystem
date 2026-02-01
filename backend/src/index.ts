@@ -13,6 +13,11 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(bodyParser.json({ limit: "50mb" })); // Allow large payloads for HTML
 
+// --- Health Check (Public) ---
+app.get("/", (req, res) => {
+  res.send("Scraper Backend is Running!");
+});
+
 // --- Authentication Middleware ---
 app.use((req, res, next) => {
   const adminSecret = process.env.API_SECRET;

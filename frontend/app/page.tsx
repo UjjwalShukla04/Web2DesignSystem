@@ -501,9 +501,16 @@ export default function Home() {
       );
       setSections(data.sections);
       setStep("SELECT");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Failed to scrape website. Make sure the backend is running.");
+      let msg = "Failed to scrape website. Make sure the backend is running.";
+      if (error.response) {
+        msg += `\nError: ${error.response.status} ${error.response.statusText}`;
+        if (error.response.status === 401) {
+          msg += "\n\nTip: Click the Settings icon and enter the correct Access Code.";
+        }
+      }
+      alert(msg);
     } finally {
       setIsLoading(false);
     }

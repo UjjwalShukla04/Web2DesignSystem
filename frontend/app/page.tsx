@@ -506,6 +506,9 @@ export default function Home() {
       let msg = "Failed to scrape website. Make sure the backend is running.";
       if (error.response) {
         msg += `\nError: ${error.response.status} ${error.response.statusText}`;
+        if (error.response.data && error.response.data.error) {
+          msg += `\nDetails: ${error.response.data.error}`;
+        }
         if (error.response.status === 401) {
           msg += "\n\nTip: Click the Settings icon and enter the correct Access Code.";
         }

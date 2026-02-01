@@ -15,8 +15,12 @@ export async function scrapeWebsite(url: string): Promise<ScrapedSection[]> {
     args: [
       '--no-sandbox', 
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage', // Vital for Docker/Render (avoids /dev/shm size limits)
-      '--disable-gpu',           // Vital for headless environments
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process', 
     ] 
   });
   const page = await browser.newPage();

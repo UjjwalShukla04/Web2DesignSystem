@@ -96,7 +96,7 @@ app.post("/api/scrape", async (req, res) => {
     res.json({ sections });
   } catch (error: any) {
     logError("[SCRAPE] Error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
 

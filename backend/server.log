@@ -74,3 +74,164 @@ Please retry in 33.956427546s. [{"@type":"type.googleapis.com/google.rpc.Help","
 [2026-02-01T10:43:54.908Z] [GENERATE] Success.
 [2026-02-01T10:44:35.631Z] [GENERATE] Request received
 [2026-02-01T10:44:52.357Z] [GENERATE] Success.
+[2026-02-01T18:12:34.578Z] SERVER STARTING VERSION 2
+[2026-02-01T18:13:13.979Z] SERVER STARTING VERSION 2
+[2026-02-01T18:13:45.161Z] SERVER STARTING VERSION 2
+[2026-02-01T18:13:45.163Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:14:46.769Z] SERVER STARTING VERSION 2
+[2026-02-01T18:30:23.606Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T18:30:26.740Z] [SCRAPE] Success. Found 0 sections.
+[2026-02-01T18:31:10.419Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T18:31:12.808Z] [SCRAPE] Success. Found 0 sections.
+[2026-02-01T18:32:15.661Z] [SCRAPE] Request received for URL: https://ticker.finology.in/
+[2026-02-01T18:32:22.661Z] [SCRAPE] Success. Found 2 sections.
+[2026-02-01T18:32:26.273Z] [GENERATE] Request received
+[2026-02-01T18:32:34.770Z] [GENERATE] Success.
+[2026-02-01T18:33:31.851Z] [GENERATE] Request received
+[2026-02-01T18:33:36.801Z] [GENERATE] Success.
+[2026-02-01T18:34:06.390Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T18:34:09.089Z] [SCRAPE] Success. Found 0 sections.
+[2026-02-01T18:34:48.132Z] [SCRAPE] Request received for URL: https://www.codehelp.in/
+[2026-02-01T18:34:50.988Z] [SCRAPE] Success. Found 0 sections.
+[2026-02-01T18:34:58.564Z] [SCRAPE] Request received for URL: https://www.codehelp.in
+[2026-02-01T18:35:01.063Z] [SCRAPE] Success. Found 0 sections.
+[2026-02-01T18:35:31.536Z] [SCRAPE] Request received for URL: https://chaicode.com/
+[2026-02-01T18:35:35.470Z] [SCRAPE] Success. Found 14 sections.
+[2026-02-01T18:35:41.841Z] [GENERATE] Request received
+[2026-02-01T18:38:32.052Z] [GENERATE] Success.
+[2026-02-01T18:40:18.012Z] SERVER STARTING VERSION 2
+[2026-02-01T18:40:18.012Z] SERVER STARTING VERSION 2
+[2026-02-01T18:40:18.015Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:40:47.374Z] SERVER STARTING VERSION 2
+[2026-02-01T18:40:47.509Z] SERVER STARTING VERSION 2
+[2026-02-01T18:40:47.511Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:41:03.897Z] SERVER STARTING VERSION 2
+[2026-02-01T18:41:04.093Z] SERVER STARTING VERSION 2
+[2026-02-01T18:41:04.095Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:41:54.863Z] SERVER STARTING VERSION 2
+[2026-02-01T18:41:55.052Z] SERVER STARTING VERSION 2
+[2026-02-01T18:41:55.054Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:42:04.538Z] SERVER STARTING VERSION 2
+[2026-02-01T18:42:04.737Z] SERVER STARTING VERSION 2
+[2026-02-01T18:42:04.739Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:46:55.951Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:48:33.630Z] [SCRAPE] Request received for URL: https://chaicode.com/
+[2026-02-01T18:48:37.272Z] [SCRAPE] Success. Found 14 sections.
+[2026-02-01T18:49:54.485Z] [SCRAPE] Request received for URL: https://chaicode.com/
+[2026-02-01T18:49:57.441Z] [SCRAPE] Success. Found 14 sections.
+[2026-02-01T18:50:09.578Z] [GENERATE] Request received
+[2026-02-01T18:51:01.174Z] [GENERATE] Success.
+[2026-02-01T18:51:25.001Z] [GENERATE] Request received
+[2026-02-01T18:51:46.043Z] [GENERATE] Success.
+[2026-02-01T18:54:17.176Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:54:26.784Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:54:37.560Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:54:45.664Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:68:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:55:11.138Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at file:///C:/Users/UJJWAL%20SHUKLA/OneDrive/Desktop/Srapping/backend/dist/index.js:57:20
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T18:58:06.576Z] [ERROR] Server failed to start: Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\node_modules\express\lib\application.js:605:24)
+    at <anonymous> (C:\Users\UJJWAL SHUKLA\OneDrive\Desktop\Srapping\backend\src\index.ts:99:20)
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[2026-02-01T19:05:33.557Z] [SCRAPE] Request received for URL: https://chaicode.com/
+[2026-02-01T19:05:37.045Z] [SCRAPE] Success. Found 14 sections.

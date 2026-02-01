@@ -1,8 +1,8 @@
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { scrapeWebsite } from "./scraper";
-import { generateComponent } from "./generator";
+import { scrapeWebsite } from "./scraper.js";
+import { generateComponent } from "./generator.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -12,6 +12,37 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(bodyParser.json({ limit: "50mb" })); // Allow large payloads for HTML
+
+// --- Authentication Middleware ---
+app.use((req, res, next) => {
+  const adminSecret = process.env.API_SECRET;
+  
+  // 1. If no secret is set on the server, it's open to the public (or user accepts risk)
+  if (!adminSecret) {
+    return next();
+  }
+
+  // 2. If the user provides their OWN API key, we let them through (they pay for it)
+  // Check body for apiKey (if applicable to the route)
+  if (req.body && req.body.apiKey && req.body.apiKey.trim() !== "") {
+    return next();
+  }
+
+  // 3. Otherwise, they must provide the correct x-api-secret header
+  const clientSecret = req.headers["x-api-secret"];
+  if (clientSecret === adminSecret) {
+    return next();
+  }
+
+  // 4. Reject
+  logError("[AUTH] Unauthorized access attempt", { 
+    url: req.url, 
+    ip: req.ip 
+  });
+  res.status(401).json({ 
+    error: "Unauthorized. Please provide a valid 'x-api-secret' header or your own 'apiKey' in the request body." 
+  });
+});
 
 import fs from "fs";
 import path from "path";
@@ -52,11 +83,11 @@ app.post("/api/scrape", async (req, res) => {
 app.post("/api/generate", async (req, res) => {
   try {
     log("[GENERATE] Request received");
-    const { html, instructions } = req.body;
+    const { html, instructions, provider, apiKey } = req.body;
     if (!html) {
       return res.status(400).json({ error: "HTML content is required" });
     }
-    const code = await generateComponent(html, instructions);
+    const code = await generateComponent(html, instructions, provider, apiKey);
     log("[GENERATE] Success.");
     res.json({ code });
   } catch (error: any) {
@@ -65,7 +96,11 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
-  log("SERVER STARTING VERSION 2");
+  console.log("SERVER STARTING VERSION 3");
+});
+
+server.on("error", (err) => {
+  logError("Server failed to start:", err);
 });

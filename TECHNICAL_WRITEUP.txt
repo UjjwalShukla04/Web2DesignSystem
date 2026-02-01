@@ -1,0 +1,28 @@
+Technical Write-up
+
+1. What was the hardest part?
+The most challenging aspect was robustly identifying "meaningful" sections from raw HTML. Modern websites are deeply nested with `div` soup. Simply grabbing all `section` tags isn't enough because many sites don't use semantic HTML correctly. We had to implement a heuristic algorithm in `scraper.ts` that filters elements based on visibility, size (rect dimensions), and content (ignoring empty wrappers) to ensure users are presented with actual, usable UI blocks rather than tiny fragments or massive page wrappers.
+
+2. How did you decide component boundaries?
+We used a "Semantic + Heuristic" approach server-side (in Playwright):
+- Semantic Priority: First, we target standard tags like `<header>`, `<footer>`, `<section>`, `<nav>`, and `<main>`.
+- Visual Heuristics: We then fallback to `div`s that are direct children of `body` or `main`.
+- Filtering: Crucially, we check the `BoundingClientRect` of each candidate. Elements must be visible (non-zero dimensions) and exceed a minimum size (100x100px) to be considered a "component." This filters out invisible tracking pixels, scripts, and layout spacers.
+
+3. What broke, and how did you handle it?
+Several things broke during development:
+- Gemini API Model Name: The initial model `gemini-1.5-flash` returned a 404. We debugged this by checking the latest API docs and switching to `gemini-flash-latest`, which resolved the error.
+- Port Conflicts (EADDRINUSE): The backend server process became a "zombie" (stuck running) when the terminal context changed, causing port 4000 to be blocked. We resolved this by identifying the PID using `netstat` and forcefully terminating it with `taskkill`.
+- Layout Issues: The frontend editor initially had a large empty whitespace because the flex container was set to `w-1/2` without a sibling. We fixed this by switching to `w-full` and implementing a proper split-pane layout with `resizablePanels` in Sandpack.
+- Module System: Node.js complained about `import` statements. We standardized on ES Modules by setting `"type": "module"` in `package.json` and using `tsx` for execution.
+
+4. How did you use AI in your workflow?
+AI was utilized in two distinct layers:
+- The Product Core: The application itself relies on Google's Gemini AI to perform the "transpilation" of raw, messy HTML into clean, semantic React + Tailwind code. We use a specialized system prompt that instructs the AI to act as a "Senior Frontend Developer," handling image placeholders, icon replacements (`lucide-react`), and responsive design logic.
+- The Development Process: As an AI Pair Programmer (Trae), I generated the initial boilerplate, wrote the scraping logic, debugged the terminal errors, and iteratively refined the UI based on your natural language requests (e.g., "add vertical resizing").
+
+5. What would you improve with more time?
+- Visual-Based Scraping: Instead of relying solely on DOM parsing, I would use an AI vision model to look at a screenshot of the page and identify component boundaries visually, which is how humans see them.
+- Global Context Awareness: Currently, components are generated in isolation. I would add a "Global Styles" pass to ensure consistent fonts and color palettes across multiple generated components.
+- Framework Agnosticism: Abstract the generation layer to support Vue, Svelte, or plain HTML/CSS output.
+- Persistence: Add a database (PostgreSQL/Supabase) to save user's generated libraries and scrape history.

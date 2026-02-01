@@ -15,6 +15,7 @@ import {
   LayoutTemplate,
   Rows,
   Columns,
+  Settings,
 } from "lucide-react";
 import {
   SandpackProvider,
@@ -40,13 +41,129 @@ interface ScrapedSection {
 
 // --- Components ---
 
+const ProviderSettings = ({
+  provider,
+  setProvider,
+  apiKey,
+  setApiKey,
+  accessCode,
+  setAccessCode,
+}: {
+  provider: "gemini" | "openai";
+  setProvider: (p: "gemini" | "openai") => void;
+  apiKey: string;
+  setApiKey: (k: string) => void;
+  accessCode: string;
+  setAccessCode: (c: string) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative z-50">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors border border-gray-200 shadow-sm"
+        title="AI Settings"
+      >
+        <Settings className="w-5 h-5" />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 animate-in fade-in zoom-in-95 duration-200 z-[100]">
+            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Settings className="w-4 h-4" /> AI Configuration
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Provider
+                </label>
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  <button
+                    onClick={() => setProvider("gemini")}
+                    className={cn(
+                      "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
+                      provider === "gemini"
+                        ? "bg-white shadow-sm text-blue-600"
+                        : "text-gray-500 hover:text-gray-900",
+                    )}
+                  >
+                    Gemini
+                  </button>
+                  <button
+                    onClick={() => setProvider("openai")}
+                    className={cn(
+                      "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
+                      provider === "openai"
+                        ? "bg-white shadow-sm text-green-600"
+                        : "text-gray-500 hover:text-gray-900",
+                    )}
+                  >
+                    OpenAI
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API Key{" "}
+                  <span className="text-gray-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder={
+                    provider === "gemini"
+                      ? "Use server env or paste key..."
+                      : "sk-..."
+                  }
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to use the server-side environment variables.
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Server Access Code
+                </label>
+                <input
+                  type="password"
+                  placeholder="Admin Secret (if required)"
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Required if you are NOT providing your own API key and the
+                  server is protected.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div
+            className="fixed inset-0 z-[90]"
+            onClick={() => setIsOpen(false)}
+          />
+        </>
+      )}
+    </div>
+  );
+};
+
 // 1. URL Input
 const UrlInput = ({
   onScrape,
   isLoading,
+  settings,
 }: {
   onScrape: (url: string) => void;
   isLoading: boolean;
+  settings: React.ReactNode;
 }) => {
   const [url, setUrl] = useState("");
 
@@ -56,7 +173,8 @@ const UrlInput = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+      <div className="absolute top-4 right-4">{settings}</div>
       <div className="bg-blue-100 p-4 rounded-full mb-6">
         <Globe className="w-12 h-12 text-blue-600" />
       </div>
@@ -151,15 +269,18 @@ const ComponentEditor = ({
   onRefine,
   isRefining,
   onReset,
+  settings,
 }: {
   code: string;
-  setCode: (c: string) => void;
-  onRefine: (prompt: string) => void;
+  setCode: (code: string) => void;
+  onRefine: (instructions: string) => void;
   isRefining: boolean;
   onReset: () => void;
+  settings: React.ReactNode;
 }) => {
-  const [prompt, setPrompt] = useState("");
   const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
+
+  const [prompt, setPrompt] = useState("");
 
   const handleRefine = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,22 +291,22 @@ const ComponentEditor = ({
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-900 text-white">
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       {/* Header */}
-      <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-gray-950 sticky top-0 z-50">
+      <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-gray-900/50 backdrop-blur">
         <div className="flex items-center gap-4">
-          <div className="font-bold text-lg tracking-tight">
-            Component<span className="text-blue-500">Gen</span>
-          </div>
-          <div className="h-6 w-px bg-gray-800"></div>
           <button
             onClick={onReset}
-            className="text-sm text-gray-400 hover:text-white transition-colors"
+            className="text-gray-400 hover:text-white transition-colors"
           >
-            Start Over
+            <ArrowRight className="w-5 h-5 rotate-180" />
           </button>
+          <h1 className="font-bold text-lg tracking-tight">
+            Generated Component
+          </h1>
         </div>
         <div className="flex items-center gap-3">
+          {settings}
           <div className="flex items-center bg-gray-800 rounded-lg p-1 mr-2">
             <button
               onClick={() => setLayout("horizontal")}
@@ -213,10 +334,11 @@ const ComponentEditor = ({
             </button>
           </div>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-sm transition-colors"
+            className="p-2 text-gray-400 hover:text-white transition-colors"
+            title="Copy Code"
             onClick={() => navigator.clipboard.writeText(code)}
           >
-            <Copy className="w-4 h-4" /> Copy Code
+            <Copy className="w-5 h-5" />
           </button>
         </div>
       </header>
@@ -343,6 +465,22 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [history, setHistory] = useState<string[]>([]); // For undo/redo if needed, or context
 
+  // AI Settings
+  const [provider, setProvider] = useState<"gemini" | "openai">("gemini");
+  const [apiKey, setApiKey] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+
+  const settingsNode = (
+    <ProviderSettings
+      provider={provider}
+      setProvider={setProvider}
+      apiKey={apiKey}
+      setApiKey={setApiKey}
+      accessCode={accessCode}
+      setAccessCode={setAccessCode}
+    />
+  );
+
   const handleScrape = async (url: string) => {
     setIsLoading(true);
     try {
@@ -364,10 +502,21 @@ export default function Home() {
     setIsLoading(true); // Global loading overlay or just transition
     // Ideally show a loader before switching to EDIT
     try {
-      const { data } = await axios.post("http://localhost:4000/api/generate", {
-        html: section.html,
-        instructions: "Initial generation. Make it look like the original.",
-      });
+      const { data } = await axios.post(
+        `${API_URL}/api/generate`,
+        {
+          html: section.html,
+          instructions:
+            "Convert this to a modern, responsive React component using Tailwind CSS. Use lucide-react for icons. Use https://placehold.co for images.",
+          provider,
+          apiKey,
+        },
+        {
+          headers: {
+            "x-api-secret": accessCode,
+          },
+        },
+      );
       setCode(data.code);
       setHistory([data.code]);
       setStep("EDIT");
@@ -398,9 +547,11 @@ export default function Home() {
       // This ensures we don't drift too far from the source, but might lose manual edits.
       // Given the MVP nature, this is acceptable.
 
-      const { data } = await axios.post("http://localhost:4000/api/generate", {
+      const { data } = await axios.post(`${API_URL}/api/generate`, {
         html: selectedSection.html,
         instructions: `Refine the component. ${instructions}. Previous output context (if needed): preserve the general structure.`,
+        provider,
+        apiKey,
       });
       setCode(data.code);
       setHistory((prev) => [...prev, data.code]);
@@ -413,7 +564,13 @@ export default function Home() {
   };
 
   if (step === "INPUT") {
-    return <UrlInput onScrape={handleScrape} isLoading={isLoading} />;
+    return (
+      <UrlInput
+        onScrape={handleScrape}
+        isLoading={isLoading}
+        settings={settingsNode}
+      />
+    );
   }
 
   if (step === "SELECT") {
@@ -439,7 +596,7 @@ export default function Home() {
           <h1 className="font-semibold text-lg">
             Found {sections.length} Sections
           </h1>
-          <div className="w-20"></div>
+          <div className="w-20 flex justify-end">{settingsNode}</div>
         </div>
         <SectionSelector sections={sections} onSelect={handleGenerate} />
       </div>
@@ -454,6 +611,7 @@ export default function Home() {
         onRefine={handleRefine}
         isRefining={isLoading}
         onReset={() => setStep("INPUT")}
+        settings={settingsNode}
       />
     );
   }

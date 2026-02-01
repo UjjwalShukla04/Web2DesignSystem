@@ -9,7 +9,11 @@ export interface ScrapedSection {
 }
 
 export async function scrapeWebsite(url: string): Promise<ScrapedSection[]> {
-  const browser = await chromium.launch({ headless: true });
+  console.log(`Launching browser to scrape: ${url}`);
+  const browser = await chromium.launch({ 
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Required for many containerized environments (Render, Docker)
+  });
   const page = await browser.newPage();
 
   try {

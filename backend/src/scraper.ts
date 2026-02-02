@@ -27,7 +27,9 @@ export async function scrapeWebsite(url: string): Promise<ScrapedSection[]> {
 
   try {
     console.log(`Navigating to ${url}...`);
-    await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+    // 'networkidle' is too flaky on slow connections/servers. 
+    // 'domcontentloaded' is much faster and sufficient for DOM scraping.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
     // Inject a script to identify sections
     const sections = await page.evaluate(() => {

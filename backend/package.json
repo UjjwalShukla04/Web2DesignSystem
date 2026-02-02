@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node dist/index.js",
+    "prestart": "npx playwright install chromium",
     "dev": "nodemon --exec tsx src/index.ts",
     "build": "tsc",
     "postinstall": "npx playwright install chromium",

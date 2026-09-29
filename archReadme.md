@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-**Goal**: Build a production-grade web app that converts public website URLs into editable, production-ready React + Tailwind CSS components.
+**Goal**: A web app that converts sections of public websites into editable React + Tailwind CSS components.
 **Core Value**: Automates the process of "inspiration -> code" by combining server-side scraping with generative AI.
 
 ---
@@ -11,22 +11,52 @@
 
 The application follows a decoupled **Client-Server** architecture:
 
-### **Frontend (Client)**
+### **Frontend (Client)** — `frontend/`
 
-- **Framework**: Next.js 14+ (App Router)
-- **Styling**: Tailwind CSS
-- **Live Preview**: `@codesandbox/sandpack-react` (Runs generated React code in an isolated browser environment)
+- **Framework**: Next.js 16 (App Router), React 19 with the React Compiler
+- **Styling**: Tailwind CSS v4 (configured in `app/globals.css`, no `tailwind.config` file)
+- **Live Preview**: `@codesandbox/sandpack-react` (runs the generated component in an isolated iframe)
 - **Icons**: `lucide-react`
-- **State Management**: React `useState` / `useEffect`
+- **State**: React state, saved to `sessionStorage` so a refresh keeps your place. The page renders client-side only (so restored state can't mismatch server HTML).
 
-### **Backend (Server)**
+| File | Responsibility |
+|---|---|
+| `app/page.tsx` | App state and flow: `INPUT` → `SELECT` → `EDIT`, requests, cancel, undo/redo, auto-fix |
+| `app/lib/api.ts` | Backend client: scrape, streamed generate, URL normalization, error messages |
+| `app/lib/storage.ts` | `usePersistentState` (sessionStorage) |
+| `app/lib/formats.ts` | Output formats: Sandpack template, files and download name for React / Vue / Svelte / HTML |
+| `app/lib/download.ts` | Browser file download |
+| `app/lib/history.ts` | Saved projects in IndexedDB (last 50) |
+| `app/lib/theme.ts`, `theme-boot.ts` | Light / dark / system theme (class-based `dark:` variant, applied before first paint) |
+| `app/lib/media.ts` | `useMediaQuery` (phone layout) |
+| `app/components/HistoryPanel.tsx` | History drawer |
+| `app/components/ThemeToggle.tsx` | Theme button |
+| `app/components/UrlInput.tsx` | Step 1: URL entry |
+| `app/components/SectionSelector.tsx` | Step 2: section cards with screenshot previews |
+| `app/components/ComponentEditor.tsx` | Step 3: Sandpack editor/preview, refine bar, undo/redo, "Fix with AI" |
+| `app/components/ProviderSettings.tsx` | Provider, API key, access code |
+| `app/components/Feedback.tsx` | Error banner, progress/cancel notice, streaming output |
 
-- **Runtime**: Node.js (Express)
-- **Language**: TypeScript
-- **Scraping Engine**: Playwright (Headless Browser)
-- **HTML Parsing**: Cheerio (for lightweight manipulation)
-- **AI Engine**: Google Generative AI (Gemini 1.5 Flash / Pro)
-- **API Structure**: RESTful JSON API
+### **Backend (Server)** — `backend/`
+
+- **Runtime**: Node.js 24 (Express 5), TypeScript (ES modules)
+- **Scraping Engine**: Playwright (one shared headless Chromium)
+- **AI Engine**: Google Gemini via `@google/genai` (default) or OpenAI; models set by `GEMINI_MODEL` / `OPENAI_MODEL`
+- **API Structure**: RESTful JSON API, with optional streaming for generation
+
+| File | Responsibility |
+|---|---|
+| `src/index.ts` | Entry point: loads config, starts the server |
+| `src/config.ts` | Reads and validates environment settings (production safety checks) |
+| `src/app.ts` | Express app: CORS, auth, rate limits, input validation, routes |
+| `src/scraper.ts` | Shared browser, sandbox, concurrency queue, per-scrape deadline, result cache |
+| `src/usage.ts` | Token usage → estimated cost; per-user daily limit and daily budget for the server's keys |
+| `src/cache.ts` | In-memory result cache (TTL, LRU eviction, sharing of identical in-flight requests) |
+| `src/extract.ts` | Runs in the page: section detection, style capture, screenshot, fonts |
+| `src/netguard.ts` | SSRF protection: URL validation and the filtering proxy the browser uses |
+| `src/generator.ts` | Prompts per output format, page prompts with a shared palette, Gemini/OpenAI streaming calls, extracting code from the reply |
+| `src/logger.ts` | Console + optional log file |
+| `src/browser-env.ts` | Keeps Playwright's Chromium inside `node_modules` (see deployment.md) |
 
 ---
 
@@ -34,119 +64,227 @@ The application follows a decoupled **Client-Server** architecture:
 
 ### **Step 1: User Input (URL Entry)**
 
-1.  **Action**: User pastes a valid URL (e.g., `https://example.com`) into the frontend input field.
-2.  **Validation**: Frontend checks if the string is a valid URL.
-3.  **Request**: Frontend sends `POST /api/scrape` with `{ url: "..." }` to the backend.
+1.  **Action**: User types a URL. `example.com` works; `https://` is added automatically.
+2.  **Request**: Frontend sends `POST /api/scrape` with `{ url }` and the `x-api-secret` header. The user can cancel; after 8 seconds a note explains that a sleeping server can take a minute to wake. (The frontend also pings the backend on load to start waking it early.)
 
 ### **Step 2: Server-Side Scraping**
 
-1.  **Browser Launch**: Backend spins up a headless Playwright browser instance.
-2.  **Navigation**: Browser navigates to the target URL and waits for the network to idle (ensures dynamic content loads).
-3.  **Section Detection (Heuristic Algorithm)**:
-    - The scraper analyzes the DOM to find semantic container tags (`<section>`, `<header>`, `<footer>`, `<div>` with specific classes).
-    - It filters out tiny elements or hidden nodes.
-    - It extracts the **Outer HTML**, **Text Content**, and **Bounding Box Dimensions** for each section.
-4.  **Response**: Backend returns a JSON array of `ScrapedSection` objects to the frontend.
+1.  **Validation**: Only `http`/`https` URLs are accepted, and the host must resolve to a public IP address (see Security).
+2.  **Cache**: If the same URL was scraped in the last 10 minutes (`SCRAPE_CACHE_TTL_MS`), that result is returned immediately (`"cached": true`); identical requests arriving during a scrape share it. Up to 10 results are kept, least recently used evicted first; failures are never cached. `"fresh": true` (the **Refresh** button) always scrapes again.
+3.  **Queue**: At most `MAX_CONCURRENT_SCRAPES` scrapes (default 1) run at once; up to 5 more wait. Beyond that the server answers `503`.
+4.  **Browser**: A single Chromium (sandboxed when the host allows it) is launched on first use and reused. Each scrape gets its own isolated context at a 1280×800 viewport. The browser closes after 5 idle minutes and relaunches automatically if it crashes.
+5.  **Deadline**: Each scrape has a hard limit (`SCRAPE_TIMEOUT_MS`, default 90s). A page that hangs (e.g. blocks its main thread) gets a `504`, its context is closed, and the queue moves on.
+6.  **Navigation**: Waits for `domcontentloaded`, then (best-effort, capped) for `load` and for the network to go idle.
+7.  **Scroll-through**: Scrolls the page with real mouse-wheel events (also inside a scrolling container, if the site uses one), so lazy images load and scroll-reveal animations run, then returns to the top.
+8.  **Section Detection** (`extract.ts`, inside the page):
+    - **Candidates**: `<section>`, `<header>`, `<footer>`, `<main>`, `<nav>`, direct `<div>` children of `<body>`/`<main>`, and divs whose class or id contains "section". Must be at least 100×100px with text or an image.
+    - **Remove overlaps**: drop *wrappers* — elements whose height is at least 70% covered by 2+ other candidates (e.g. `<main>` around several `<section>`s) — then anything nested inside a kept candidate. A container holding a few small candidates plus other content is kept instead (dropping it would lose that content).
+    - **Split containers**: replaced by their child blocks when those are stacked one per row (not side-by-side columns, tabs or cards) and the container is either "mixed" (see above) or oversized: taller than 2 viewports, or 3 for a `<section>`. Header, footer and nav are never split.
+    - **Drop decorative layers**: `aria-hidden` elements, and — when two sections cover mostly the same area (e.g. a hero background layer) — the one with less text.
+    - **Recover missed content**: walking down from `<body>`, any visible block that no section touches becomes a section (e.g. a hero or banner that isn't a candidate). A block holding one or two small sections entirely inside it (e.g. a sidebar in a hero's product screenshot) replaces them, so the hero stays whole.
+    - **Limits**: at most 40 sections; IDs made unique.
+9.  **HTML Copy** for each section (built in a separate inert document):
+    - **Computed styles inlined** as `style` (colors, fonts, spacing, flex/grid, borders, shadows...); inherited properties only where they change.
+    - **Phone styles**: the viewport is resized to 390px and styles that differ are recorded in `data-mobile-style`, so the AI can write responsive classes.
+    - **Pseudo-elements**: `::before`/`::after` content and styles go into `data-before`/`data-after`.
+    - **Shadow DOM**: open shadow roots and slots are flattened into the copy.
+    - **URLs made absolute**: images (loaded source, `data-src`, or the largest `srcset` candidate), videos, links. Large inline `data:` images are dropped.
+    - **Removed**: scripts, styles, iframes, `<source>`, comments, `data-*`/`on*` attributes, SVG path data.
+    - **Size cap**: 100,000 characters per section, cut at a tag boundary.
+10.  **Page extras**: a JPEG screenshot of the top of the page (up to 8,000px) for previews, and the page's web fonts (family names plus the `@font-face`/`@import` CSS that loads them).
 
 ### **Step 3: Section Selection**
 
-1.  **UI Display**: Frontend renders a list of cards representing the detected sections.
-2.  **User Action**: User clicks "Generate Component" on a specific section (e.g., the "Hero" section).
-3.  **Request**: Frontend sends `POST /api/generate` to the backend with:
-    - `html`: The raw HTML string of the selected section.
-    - `instructions`: "Convert this to React + Tailwind".
+1.  **UI Display**: One card per section with its slice of the page screenshot, tag, ID and visible text. Cards are real buttons (keyboard accessible). The header shows the URL, when it was scraped (or that it's a saved copy), and **Refresh**.
+2.  **One section**: Clicking a card sends `POST /api/generate` (streamed) with the section's `html`, default `instructions`, the output `format` (⚙ Settings → Output), the chosen `provider`/`apiKey`, the page's font families, and the section's **screenshot** (cut out of the page screenshot in the browser, max 1024×2000px JPEG; can be turned off in ⚙ Settings). The model's output is shown as it arrives; the user can cancel.
+3.  **A whole page**: The **+** button on each card adds it to a page (numbered in the order picked; 2–8 sections). **Generate page** sends `sections` (their HTML, in that order) instead of `html`.
 
-### **Step 4: AI Component Generation**
+### **Step 4: AI Generation**
 
-1.  **Prompt Engineering**: Backend constructs a strict system prompt for the Gemini AI model.
-    - _Role_: Expert React Developer.
-    - _Constraint_: Use `lucide-react` for icons, use `https://placehold.co` for broken images, ensure responsive Tailwind classes.
-    - _Input_: The raw HTML from Step 3.
-2.  **AI Processing**: Gemini processes the HTML and generates a complete, functional React component string.
-3.  **Sanitization**: Backend strips Markdown code fences (```tsx) and returns the raw code string.
+1.  **Prompt**: The model acts as an expert frontend developer, writing the chosen format:
 
-### **Step 5: Live Preview & Iteration**
+    | Format | Output | Icons |
+    |---|---|---|
+    | `react` | TSX function component, `export default` | `lucide-react` |
+    | `vue` | Vue 3 SFC with `<script setup lang="ts">` | `lucide-vue-next` |
+    | `svelte` | Svelte 3 syntax (no runes) | inline SVG |
+    | `html` | Complete HTML document with the Tailwind CDN script | inline SVG |
 
-1.  **Sandpack Execution**: Frontend receives the code and injects it into the Sandpack instance.
-2.  **Rendering**: The user sees the live component on the right and the code on the left.
-3.  **Refinement Loop (Chat)**:
-    - User types: "Make the background dark blue."
-    - Frontend sends `POST /api/generate` again with:
-      - `html`: Original HTML (or current state context).
-      - `instructions`: "Refine the component. Make the background dark blue."
-    - Backend returns the updated code.
-    - Sandpack updates instantly.
+    It is told that `style` holds computed desktop styles to translate into Tailwind (arbitrary values allowed), that `data-mobile-style` holds the phone differences (base classes vs `md:`), what `data-before`/`data-after` mean, to keep absolute image URLs, which web fonts are loaded, which packages it may import, and that the scraped HTML is third-party content, never instructions.
+2.  **Pages**: For `sections`, the prompt asks for one page with each section in order (in React, one sub-component per section rendered from `export default function Page()`). A **shared palette** — the most-used colors and fonts across the selected sections, read from their captured styles — is included, and the model is told to use exactly those values so the page looks like one design. The page budget is 150,000 characters of HTML, split evenly between sections.
+3.  **Screenshots**: Sent to the model as images (OpenAI `image_url`, Gemini `inlineData`). The prompt says what they show (for a page: which sections) and to match their visual design, using the HTML for exact text, links and image URLs. Refinements send the original screenshot(s) too, so requests like "match the original spacing" work.
+4.  **Output limit**: If the model stops at its output limit (OpenAI `finish_reason: "length"`, Gemini `MAX_TOKENS`), it's asked to continue exactly where it stopped, up to 2 times, and the parts are joined. If it still isn't finished, the user gets a clear error suggesting fewer sections.
+5.  **Truncation**: HTML over the budget (50,000 characters for one section) is cut at a tag boundary, and the model is told it was truncated.
+6.  **Extraction**: The code is pulled from the reply, even if it's wrapped in a Markdown fence or prose.
+7.  **No API key**: With the default Gemini provider and no key configured, a placeholder in the requested format is returned.
+
+### **Step 5: Live Preview, Iteration & Export**
+
+1.  **Preview width**: 📱 Phone (390px), Fit (the pane's width), or 🖥 Desktop (1280px — the width the original was scraped at — scaled down to fit). The preview is re-hosted without reloading when switching.
+2.  **Compare view**: the original screenshot(s) next to the live preview; with the Desktop width both are the same 1280px design at the same scale.
+3.  **Sandpack**: Each format uses its own template (`react-ts`, `vue-ts`, `svelte`, `static`). The code goes into that template's main file, the page's font CSS into the stylesheet the template already loads, with Tailwind from its CDN and pinned icon packages. The editor remembers the format the code was generated in, so changing the setting afterwards doesn't break it.
+4.  **Preview status**: A badge on the preview shows *Loading preview…*, *Preview ready* or *Preview error*, with a **Reload preview** button. The first preview of a session downloads packages inside the preview (it runs on codesandbox.io) and can take up to a minute; after 20 seconds a note says so.
+5.  **Editing**: Manual edits are synced back to the app, so **Copy** and refinements use what is on screen.
+6.  **Refinement Loop**: The user describes a change; the frontend sends `currentCode` (the editor's contents) and the instruction, streamed. The model applies only the requested change.
+7.  **Undo/Redo**: Every AI change can be undone (up to 20 steps).
+8.  **Preview errors**: If the preview fails, an error bar offers **Fix with AI**. Fresh AI output that fails is sent back for a fix automatically, once — never while the user is editing by hand.
+9.  **Export**: **Download** saves the code (`Component.tsx`, `Page.vue`, `index.html`, ...), plus `fonts.css` when the original site had web fonts; **Copy** copies it; **Open in CodeSandbox** (in the preview) opens it as a full sandbox.
+10.  **Back** returns to the section list; **New URL** starts over.
 
 ---
 
 ## 4. API Reference
 
+All `/api/*` routes and `/health/browser` require the `x-api-secret` header when the server has `API_SECRET` set. Exception: `POST /api/generate` is also allowed when the body contains the caller's own `apiKey` (they pay for the AI call). Scraping always needs the secret, because it runs on the server's resources.
+
+Errors are returned as `{ "error": "message" }`; stack traces are never sent.
+
 ### `POST /api/scrape`
 
-**Description**: Scrapes a website and returns detected sections.
+Rate limit: 10 requests/minute per IP.
 
-- **Body**: `{ "url": "https://..." }`
+- **Body**: `{ "url": "https://...", "fresh": false }` — `fresh: true` skips the cache.
 - **Response**:
   ```json
   {
     "sections": [
       {
-        "id": "uuid",
-        "tagName": "SECTION",
-        "html": "<section>...</section>",
-        "text": "Title...",
-        "rect": { "width": 100, "height": 500 }
+        "id": "section-0",
+        "tagName": "section",
+        "html": "<section style=\"...\" data-mobile-style=\"...\">...</section>",
+        "text": "Visible text preview (max 200 chars)",
+        "rect": { "x": 0, "y": 640, "width": 1280, "height": 500 }
       }
-    ]
+    ],
+    "screenshot": "data:image/jpeg;base64,...",
+    "screenshotSize": { "width": 1280, "height": 8000 },
+    "fonts": { "families": ["Inter"], "css": "@font-face { ... }" },
+    "url": "https://example.com/",
+    "scrapedAt": "2026-09-26T10:00:00.000Z",
+    "cached": false
   }
   ```
+  `rect` is in page coordinates at a 1280px-wide viewport (matching the screenshot). `cached` is true when a recent scrape of the same URL was reused; `scrapedAt` is when that scrape happened.
+- **Errors**: `400` invalid or internal/private URL, `401` missing secret, `429` rate limited, `503` scrape queue full, `504` page took too long, `500` page failed to load.
 
 ### `POST /api/generate`
 
-**Description**: Converts HTML to a React Component using AI.
+Rate limit: 20 requests/minute per IP.
 
-- **Body**:
+- **Body** (first generation):
   ```json
   {
     "html": "<div>...</div>",
-    "instructions": "Make it modern"
+    "instructions": "Make it modern",
+    "format": "react",
+    "provider": "gemini",
+    "apiKey": "optional, the caller's own key",
+    "fonts": ["Inter"],
+    "images": ["data:image/jpeg;base64,..."],
+    "stream": true
   }
   ```
-- **Response**:
-  ```json
-  {
-    "code": "import React from 'react'; ..."
-  }
+- **Body** (page): same, but `sections` (2–8 HTML strings, in page order) instead of `html`.
+- **Body** (refinement): same, but `currentCode` (the code to modify) instead of `html`; `format` should be the format of that code.
+- **Limits**: `html` and each section ≤ 200,000 characters (the model sees at most 50,000 for one section, 150,000 for a page); `currentCode` ≤ 100,000; `instructions` ≤ 2,000; `fonts` ≤ 20 names; `format` is `"react"` (default), `"vue"`, `"svelte"` or `"html"`; `provider` is `"gemini"` or `"openai"`. `images`: up to 8 base64 JPEG/PNG/WebP data URLs (≤ ~2MB each; for a page one per section, `null` where missing). Request bodies can be up to 12MB.
+- **Response** without `stream`: `{ "code": "import React from 'react'; ..." }`
+- **Response** with `"stream": true`: `application/x-ndjson`, one JSON event per line:
   ```
+  {"type":"delta","text":"import React"}
+  {"type":"delta","text":" from 'react';..."}
+  {"type":"done","code":"import React from 'react'; ..."}
+  ```
+  or `{"type":"error","error":"..."}` as the last line. Closing the connection cancels the AI call.
+
+### `GET /api/usage`
+
+Public. The caller's (client IP's) usage of the server's keys today and the limits: `{ requests, costUsd, remaining, budgetExhausted, limits: { perUserPerDay, dailyBudgetUsd } }`. Generations that use the server's key return `429` when the per-user limit or the daily budget is reached; failed generations don't count. Every generate response includes `usage: { inputTokens, outputTokens, costUsd }` (estimated from the provider's reported tokens and the price table).
+
+### `GET /api/providers`
+
+Public (no access code needed). Reports which AI providers have a key configured on the server — booleans only, never the keys: `{ "gemini": true, "openai": false }`. The settings panel uses it to tell users whether they need their own key.
+
+### `GET /health/browser`
+
+Starts the shared browser if needed and loads a blank page. Returns `200` "Browser launch successful!" or `500`.
 
 ---
 
-## 5. Key Design Decisions
+## 5. Security
 
-1.  **Why Playwright?**: Necessary for scraping Modern SPAs (Single Page Applications) that rely on JavaScript execution, which `fetch` + `cheerio` alone cannot handle.
-2.  **Why Sandpack?**: Provides a secure, browser-in-browser execution environment. It handles module bundling (imports like `lucide-react`) automatically, which is hard to do with a simple `eval()`.
-3.  **Why Gemini Flash?**: Optimized for speed and low latency, essential for a "real-time" feeling during the generation phase.
+- **SSRF protection**: All of the headless browser's traffic (navigation, redirects, subresources, `fetch`/XHR from the page's own scripts, WebSockets) goes through a small proxy inside the backend (`netguard.ts`). The proxy resolves each hostname itself, rejects private, loopback, link-local (e.g. `169.254.169.254`) and other reserved ranges — including those addresses wrapped in IPv4-mapped or NAT64 IPv6 form — and connects to the exact IP it checked, which also defeats DNS rebinding. QUIC, non-proxied WebRTC, downloads and service workers are disabled so nothing bypasses the proxy.
+- **Browser sandbox**: Chromium's sandbox is used when the host supports it.
+- **Hang protection**: every scrape has a hard deadline.
+- **Auth**: `API_SECRET` compared in constant time. In production the server won't start without `API_SECRET` (unless `ALLOW_OPEN_ACCESS=true`) or without `ALLOWED_ORIGINS`.
+- **Rate limits**: per client IP (`TRUST_PROXY` controls how the IP is read behind a reverse proxy).
+- **Input and output limits**: 1MB JSON bodies, typed and length-checked fields, capped section count and size.
+- **Generated code** runs only inside Sandpack's iframe, on a separate origin.
+- **Browser storage**: the API key and access code are kept in `sessionStorage` (cleared when the tab closes).
 
 ---
 
-## 6. Directory Structure
+## 6. Key Design Decisions
+
+1.  **Why Playwright?**: Needed for modern SPAs that render with JavaScript. It also gives access to computed styles, layout and screenshots.
+2.  **Why one shared browser?**: Launching Chromium takes about a second and a lot of memory. Reusing one browser with an isolated context per scrape is faster, and contexts don't share cookies or storage.
+3.  **Why a filtering proxy instead of request interception?**: Playwright's request interception doesn't see redirect hops, so a public URL could redirect to an internal address. A proxy sees every connection.
+4.  **Why inline computed styles (desktop and phone)?**: Without them the AI only sees class names that refer to CSS it never receives, so it can't reproduce the look or the responsive behavior.
+5.  **Why one page screenshot instead of one per section?**: One image, shared by all cards as a CSS background, is much smaller than 20–40 separate images.
+6.  **Why stream generation?**: Generating a component can take 10–60 seconds; seeing the code arrive (and being able to cancel) is much better than a spinner.
+7.  **Why one prompt for a whole page (not one per section)?**: The model sees every section at once, so it can keep spacing, headings and colors consistent; the palette extracted from the captured styles pins the colors down. It's also one request instead of up to eight.
+8.  **Why inline SVG icons for Svelte?**: Sandpack's Svelte preview compiles with an older Svelte 3 compiler that current `lucide-svelte` doesn't support. Inline SVG works in the preview and in any Svelte version.
+9.  **Why cache scrapes?**: Scraping takes 5–30 seconds and a browser slot; users often go back to the same page (e.g. to pick another section or change the format).
+10. **Why Sandpack?**: A secure, browser-in-browser execution environment that bundles imports like `lucide-react` automatically.
+11. **Why Gemini Flash by default?**: Optimized for speed and low latency.
+
+---
+
+## 7. Testing
+
+- `backend/test/` (`npm test`): SSRF guard and proxy, config rules, API routes (auth, validation, CORS, rate limits, streaming), and section extraction run in headless Chromium against a local fixture page. No network access needed.
+- `frontend/app/lib/api.test.ts` (`npm test`): URL normalization, error messages, streamed-response parsing.
+- CI (`.github/workflows/ci.yml`): type-check, lint, tests and production builds for both halves on every push and pull request.
+
+---
+
+## 8. Directory Structure
 
 ```
 /
+├── .github/workflows/ci.yml   # CI: typecheck, lint, test, build
+├── .nvmrc                     # Node 24
 ├── backend/
 │   ├── src/
-│   │   ├── index.ts        # Express Entry Point & API Routes
-│   │   ├── scraper.ts      # Playwright Logic
-│   │   └── generator.ts    # Gemini AI Logic
+│   │   ├── index.ts           # Entry point
+│   │   ├── config.ts          # Environment settings + production checks
+│   │   ├── app.ts             # Express app: auth, limits, routes
+│   │   ├── scraper.ts         # Shared browser, queue, deadline, cache
+│   │   ├── cache.ts           # Scrape result cache
+│   │   ├── extract.ts         # In-page section extraction
+│   │   ├── netguard.ts        # SSRF protection + filtering proxy
+│   │   ├── generator.ts       # Prompts (formats, pages) + Gemini/OpenAI streaming
+│   │   ├── logger.ts          # Logging
+│   │   └── browser-env.ts     # Playwright browser location
+│   ├── test/                  # node:test suites (run with tsx)
+│   ├── scripts/
+│   │   ├── install-browsers.mjs  # postinstall: installs Chromium
+│   │   └── check-connection.mjs  # npm run check:remote -- <url>
 │   ├── package.json
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── tsconfig.test.json
 │
 ├── frontend/
 │   ├── app/
-│   │   ├── components/     # UI Components (Sandpack, Selector)
-│   │   └── page.tsx        # Main Logic (State Machine)
-│   ├── package.json
-│   └── tailwind.config.ts
+│   │   ├── page.tsx           # App state and flow
+│   │   ├── components/        # UrlInput, SectionSelector, ComponentEditor, ...
+│   │   ├── lib/               # API client, formats, storage, download (+ tests)
+│   │   ├── layout.tsx
+│   │   └── globals.css        # Tailwind v4 setup
+│   ├── next.config.ts
+│   └── package.json
 │
-└── archReadme.md           # This Documentation
+├── README.md                  # Overview & local setup
+├── archReadme.md              # This document
+├── deployment.md              # Render + Vercel deployment
+└── TECHNICAL_WRITEUP.txt      # Development write-up
 ```

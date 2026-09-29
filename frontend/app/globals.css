@@ -12,11 +12,17 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Dark mode is class-based: the theme toggle (light / dark / system) puts "dark" on
+   <html>, and components use dark: variants. Colors never follow the OS by themselves,
+   which once left light-gray text on white pages. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  --background: #030712;
+  --foreground: #f3f4f6;
 }
 
 body {

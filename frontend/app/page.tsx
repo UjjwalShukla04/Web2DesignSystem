@@ -1,642 +1,476 @@
 "use client";
 
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useEffect, useEffectEvent, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { ArrowLeft } from "lucide-react";
 import {
-  Loader2,
-  ArrowRight,
-  Code,
-  Eye,
-  Send,
-  Check,
-  Copy,
-  RefreshCw,
-  Globe,
-  LayoutTemplate,
-  Rows,
-  Columns,
-  Settings,
-} from "lucide-react";
-import {
-  SandpackProvider,
-  SandpackLayout,
-  SandpackCodeEditor,
-  SandpackPreview,
-} from "@codesandbox/sandpack-react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+  describeError,
+  generate,
+  scrape,
+  fetchServerProviders,
+  wakeBackend,
+  type Provider,
+  type ScrapeResult,
+  type ScrapedSection,
+  type Usage,
+} from "./lib/api";
+import { newProjectId, saveProject, updateProject, type Project } from "./lib/history";
+import { useTheme } from "./lib/theme";
+import { readStored, usePersistentState } from "./lib/storage";
+import type { OutputFormat } from "./lib/formats";
+import { cropSection } from "./lib/crop";
+import { ProviderSettings } from "./components/ProviderSettings";
+import { UrlInput } from "./components/UrlInput";
+import { SectionSelector } from "./components/SectionSelector";
+import { ComponentEditor } from "./components/ComponentEditor";
+import { BusyNotice, ErrorBanner, StreamingOutput } from "./components/Feedback";
+import { HistoryButton, HistoryPanel } from "./components/HistoryPanel";
+import { ThemeToggle } from "./components/ThemeToggle";
 
-// --- Utility ---
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+type Step = "INPUT" | "SELECT" | "EDIT";
+
+const MAX_UNDO_STEPS = 20;
+const DEFAULT_INSTRUCTIONS = "Make it a modern, responsive, faithful version of the original.";
+// Saved projects keep the latest editor contents, a moment after typing stops.
+const AUTOSAVE_DELAY_MS = 800;
+
+/** e.g. "footer · aetnastudenthealth.com" or "Page (3 sections) · stripe.com" */
+function projectTitle(picked: ScrapedSection[], siteUrl: string): string {
+  let host = siteUrl;
+  try {
+    host = new URL(siteUrl).hostname.replace(/^www\./, "");
+  } catch {
+    // keep the raw URL
+  }
+  const what = picked.length > 1 ? `Page (${picked.length} sections)` : picked[0]?.tagName ?? "section";
+  return `${what} · ${host}`;
 }
 
-// --- Types ---
-interface ScrapedSection {
-  id: string;
-  tagName: string;
-  html: string;
-  text: string;
-}
+function App() {
+  // --- Saved across refreshes (sessionStorage) ---
+  const [step, setStep] = usePersistentState<Step>("step", "INPUT");
+  const [scrapeResult, setScrapeResult] = usePersistentState<ScrapeResult | null>("scrape", null);
+  const [liveCode, setLiveCode] = usePersistentState("liveCode", ""); // editor contents, incl. manual edits
+  const [undoStack, setUndoStack] = usePersistentState<string[]>("undo", []);
+  const [redoStack, setRedoStack] = usePersistentState<string[]>("redo", []);
+  const [format, setFormat] = usePersistentState<OutputFormat>("format", "react"); // for the next generation
+  const [codeFormat, setCodeFormat] = usePersistentState<OutputFormat>("codeFormat", "react"); // of the code in the editor
+  const [codeKind, setCodeKind] = usePersistentState<"component" | "page">("codeKind", "component");
+  // Screenshots of the section(s) the code was generated from (for the AI and Compare view).
+  const [originalImages, setOriginalImages] = usePersistentState<string[]>("originalImages", []);
+  const [useScreenshots, setUseScreenshots] = usePersistentState("useScreenshots", true);
+  // The user's own key per provider ("" = use the server's key).
+  const [keys, setKeys] = usePersistentState<Record<Provider, string>>("apiKeys", { gemini: "", openai: "" });
+  const setKey = (p: Provider, key: string) => setKeys((current) => ({ ...current, [p]: key }));
+  // Whether the server has a working key per provider (null until known).
+  const [serverKeys, setServerKeys] = useState<Record<Provider, boolean> | null>(null);
+  // The provider the user picked, or null: then use one that has a working key.
+  const [providerChoice, setProviderChoice] = usePersistentState<Provider | null>("providerChoice", null);
+  const usable = (p: Provider) => !!keys[p].trim() || serverKeys?.[p] !== false;
+  const provider: Provider =
+    providerChoice ?? (!usable("gemini") && usable("openai") ? "openai" : "gemini");
+  const apiKey = keys[provider]?.trim() || undefined; // sent with requests for the selected provider
+  const [accessCode, setAccessCode] = usePersistentState("accessCode", "");
+  // The saved project (history) the editor is working on, and its details.
+  const [projectId, setProjectId] = usePersistentState<string | null>("projectId", null);
+  const [editorFontCss, setEditorFontCss] = usePersistentState("editorFontCss", "");
+  const [projectCost, setProjectCost] = usePersistentState("projectCost", 0);
+  const [lastUsage, setLastUsage] = usePersistentState<Usage | null>("lastUsage", null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const theme = useTheme();
 
-// --- Components ---
+  // Code loaded into the editor. After a refresh it starts from the saved editor contents.
+  const [code, setCode] = useState(() => readStored("liveCode", ""));
+  const [editorVersion, setEditorVersion] = useState(0);
 
-const ProviderSettings = ({
-  provider,
-  setProvider,
-  apiKey,
-  setApiKey,
-  accessCode,
-  setAccessCode,
-}: {
-  provider: "gemini" | "openai";
-  setProvider: (p: "gemini" | "openai") => void;
-  apiKey: string;
-  setApiKey: (k: string) => void;
-  accessCode: string;
-  setAccessCode: (c: string) => void;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
+  // --- Request state ---
+  const [busy, setBusy] = useState<null | "scrape" | "generate" | "refine">(null);
+  const [streamText, setStreamText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  // Sections picked for a combined page, in the order they were picked.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+  // Only one automatic "fix the preview error" attempt per user action.
+  const autoFixUsedRef = useRef(false);
 
-  return (
-    <div className="relative z-50">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors border border-gray-200 shadow-sm"
-        title="AI Settings"
-      >
-        <Settings className="w-5 h-5" />
-      </button>
+  // Free hosting sleeps when idle; start waking the backend while the user types.
+  useEffect(() => {
+    wakeBackend();
+    fetchServerProviders().then(setServerKeys);
+  }, []);
 
-      {isOpen && (
-        <>
-          <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 animate-in fade-in zoom-in-95 duration-200 z-[100]">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Settings className="w-4 h-4" /> AI Configuration
-            </h3>
+  // A refresh can restore a step whose data didn't fit in storage.
+  const currentStep: Step =
+    step === "EDIT" && !liveCode ? (scrapeResult ? "SELECT" : "INPUT")
+    : step === "SELECT" && !scrapeResult ? "INPUT"
+    : step;
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Provider
-                </label>
-                <div className="flex bg-gray-100 p-1 rounded-lg">
-                  <button
-                    onClick={() => setProvider("gemini")}
-                    className={cn(
-                      "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                      provider === "gemini"
-                        ? "bg-white shadow-sm text-blue-600"
-                        : "text-gray-500 hover:text-gray-900",
-                    )}
-                  >
-                    Gemini
-                  </button>
-                  <button
-                    onClick={() => setProvider("openai")}
-                    className={cn(
-                      "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                      provider === "openai"
-                        ? "bg-white shadow-sm text-green-600"
-                        : "text-gray-500 hover:text-gray-900",
-                    )}
-                  >
-                    OpenAI
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  API Key{" "}
-                  <span className="text-gray-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder={
-                    provider === "gemini"
-                      ? "Use server env or paste key..."
-                      : "sk-..."
-                  }
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to use the server-side environment variables.
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-gray-100">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Server Access Code
-                </label>
-                <input
-                  type="password"
-                  placeholder="Admin Secret (if required)"
-                  value={accessCode}
-                  onChange={(e) => setAccessCode(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Required if you are NOT providing your own API key and the
-                  server is protected.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div
-            className="fixed inset-0 z-[90]"
-            onClick={() => setIsOpen(false)}
-          />
-        </>
-      )}
-    </div>
-  );
-};
-
-// 1. URL Input
-const UrlInput = ({
-  onScrape,
-  isLoading,
-  settings,
-}: {
-  onScrape: (url: string) => void;
-  isLoading: boolean;
-  settings: React.ReactNode;
-}) => {
-  const [url, setUrl] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (url) onScrape(url);
+  const begin = (kind: "scrape" | "generate" | "refine") => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setBusy(kind);
+    setStreamText("");
+    setError(null);
+    return controller;
+  };
+  const finish = (controller: AbortController) => {
+    if (abortRef.current === controller) {
+      abortRef.current = null;
+      setBusy(null);
+    }
+  };
+  const cancel = () => abortRef.current?.abort();
+  const fail = (err: unknown, action: string) => {
+    const message = describeError(err, action);
+    if (!message) return; // cancelled by the user: not an error
+    console.error(err);
+    setError(message);
+    // A rejected server key is now reported as unusable; refresh the settings' key status.
+    fetchServerProviders().then((status) => {
+      if (status) setServerKeys(status);
+    });
   };
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
-      <div className="absolute top-4 right-4">{settings}</div>
-      <div className="bg-blue-100 p-4 rounded-full mb-6">
-        <Globe className="w-12 h-12 text-blue-600" />
-      </div>
-      <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900 mb-4">
-        Turn Websites into <span className="text-blue-600">Components</span>
-      </h1>
-      <p className="text-lg text-gray-600 mb-8 max-w-2xl">
-        Paste a URL, select a section, and let AI generate clean, editable React
-        + Tailwind code for you.
-      </p>
+  const loadIntoEditor = (next: string) => {
+    setCode(next);
+    setLiveCode(next);
+    setEditorVersion((v) => v + 1);
+    setPreviewError(null);
+  };
 
-      <form onSubmit={handleSubmit} className="w-full max-w-lg relative">
-        <input
-          type="url"
-          placeholder="https://example.com"
-          className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-full focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="absolute right-2 top-2 bottom-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 flex items-center gap-2 font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-        >
-          {isLoading ? (
-            <Loader2 className="animate-spin w-5 h-5" />
-          ) : (
-            <ArrowRight className="w-5 h-5" />
-          )}
-        </button>
-      </form>
-      <div className="mt-4 flex gap-4 text-sm text-gray-500">
-        <span>✅ Production Ready</span>
-        <span>✅ React + Tailwind</span>
-        <span>✅ Fully Editable</span>
-      </div>
-    </div>
-  );
-};
-
-// 2. Section Selector
-const SectionSelector = ({
-  sections,
-  onSelect,
-}: {
-  sections: ScrapedSection[];
-  onSelect: (section: ScrapedSection) => void;
-}) => {
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-12 animate-in fade-in duration-500">
-      <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">
-          2
-        </span>
-        Select a Section to Convert
-      </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sections.map((section) => (
-          <div
-            key={section.id}
-            className="group border border-gray-200 rounded-xl overflow-hidden hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer bg-white flex flex-col"
-            onClick={() => onSelect(section)}
-          >
-            <div className="bg-gray-50 p-4 border-b border-gray-100 flex justify-between items-center">
-              <span className="font-mono text-xs px-2 py-1 bg-gray-200 rounded text-gray-600">
-                {section.tagName}
-              </span>
-              <span className="text-xs text-gray-400">ID: {section.id}</span>
-            </div>
-            <div className="p-4 flex-1">
-              <p className="text-sm text-gray-600 line-clamp-4 font-mono text-xs leading-relaxed">
-                {section.text || section.html.substring(0, 150) + "..."}
-              </p>
-            </div>
-            <div className="p-4 bg-gray-50 border-t border-gray-100 group-hover:bg-blue-50 transition-colors">
-              <button className="w-full text-blue-600 font-medium text-sm flex items-center justify-center gap-2">
-                Generate Component <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// 3. Editor & Preview
-const ComponentEditor = ({
-  code,
-  setCode,
-  onRefine,
-  isRefining,
-  onReset,
-  settings,
-}: {
-  code: string;
-  setCode: (code: string) => void;
-  onRefine: (instructions: string) => void;
-  isRefining: boolean;
-  onReset: () => void;
-  settings: React.ReactNode;
-}) => {
-  const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
-
-  const [prompt, setPrompt] = useState("");
-
-  const handleRefine = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (prompt.trim()) {
-      onRefine(prompt);
-      setPrompt("");
+  const handleScrape = async (url: string, { fresh = false } = {}) => {
+    const controller = begin("scrape");
+    try {
+      const result = await scrape(url, accessCode, controller.signal, { fresh });
+      if (!result.sections.length) {
+        setError(
+          "No sections were found on that page. It may block automated browsers, need a login, or be mostly empty.",
+        );
+        return;
+      }
+      setScrapeResult(result);
+      setSelectedIds([]);
+      setStep("SELECT");
+    } catch (err) {
+      fail(err, "Scraping the page");
+    } finally {
+      finish(controller);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      {/* Header */}
-      <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-gray-900/50 backdrop-blur">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onReset}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            <ArrowRight className="w-5 h-5 rotate-180" />
-          </button>
-          <h1 className="font-bold text-lg tracking-tight">
-            Generated Component
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {settings}
-          <div className="flex items-center bg-gray-800 rounded-lg p-1 mr-2">
-            <button
-              onClick={() => setLayout("horizontal")}
-              className={clsx(
-                "p-1.5 rounded-md transition-all",
-                layout === "horizontal"
-                  ? "bg-gray-700 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-200",
-              )}
-              title="Side-by-Side View"
-            >
-              <Columns className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setLayout("vertical")}
-              className={clsx(
-                "p-1.5 rounded-md transition-all",
-                layout === "vertical"
-                  ? "bg-gray-700 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-200",
-              )}
-              title="Stacked View"
-            >
-              <Rows className="w-4 h-4" />
-            </button>
-          </div>
-          <button
-            className="p-2 text-gray-400 hover:text-white transition-colors"
-            title="Copy Code"
-            onClick={() => navigator.clipboard.writeText(code)}
-          >
-            <Copy className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
+  /** Each section's image, cut out of the page screenshot (null where it isn't in it). */
+  const sectionImages = async (picked: ScrapedSection[]): Promise<(string | null)[]> => {
+    const shot = scrapeResult?.screenshot;
+    const size = scrapeResult?.screenshotSize;
+    if (!shot || !size) return picked.map(() => null);
+    return Promise.all(picked.map((s) => cropSection(shot, size, s.rect).catch(() => null)));
+  };
 
-      {/* Main Content */}
-      <div className="flex-1 p-4">
-        {/* Full width container for Sandpack with resize capability */}
-        <div
-          className="w-full flex flex-col border border-gray-800 rounded-lg overflow-hidden resize-y bg-gray-950"
-          style={{ height: "85vh", minHeight: "500px" }}
-        >
-          <SandpackProvider
-            template="react-ts"
-            theme="dark"
-            files={{
-              "/App.tsx": code,
-              "/public/index.html": `<div id="root"></div><script src="https://cdn.tailwindcss.com"></script>`,
-            }}
-            options={{
-              externalResources: ["https://cdn.tailwindcss.com"],
-            }}
-            customSetup={{
-              dependencies: {
-                "lucide-react": "latest",
-                clsx: "latest",
-                "tailwind-merge": "latest",
-              },
-            }}
-          >
-            {layout === "horizontal" ? (
-              <SandpackLayout style={{ height: "100%" }}>
-                <SandpackCodeEditor
-                  showTabs
-                  showLineNumbers
-                  showInlineErrors
-                  wrapContent
-                  style={{ height: "100%" }}
-                />
-                <SandpackPreview
-                  showNavigator={false}
-                  showOpenInCodeSandbox={false}
-                  style={{ height: "100%" }}
-                />
-              </SandpackLayout>
-            ) : (
-              <div className="flex flex-col h-full">
-                <div className="flex-1 overflow-hidden border-b border-gray-800 relative">
-                  {/* We wrap editor in a div to ensure it takes height */}
-                  <SandpackLayout style={{ height: "100%", border: "none" }}>
-                    <SandpackCodeEditor
-                      showTabs
-                      showLineNumbers
-                      showInlineErrors
-                      wrapContent
-                      style={{ height: "100%" }}
-                    />
-                  </SandpackLayout>
-                </div>
-                {/* Resizable Split Handle could go here, but for now fixed 50/50 or resize-y on container */}
-                <div className="flex-1 overflow-hidden relative">
-                  <SandpackLayout style={{ height: "100%", border: "none" }}>
-                    <SandpackPreview
-                      showNavigator={false}
-                      showOpenInCodeSandbox={false}
-                      style={{ height: "100%" }}
-                    />
-                  </SandpackLayout>
-                </div>
-              </div>
-            )}
-          </SandpackProvider>
-        </div>
-      </div>
+  /** Generates from one section, or several (in order) combined into a page. */
+  const runGeneration = async (picked: ScrapedSection[]) => {
+    if (busy || !picked.length) return;
+    const kind = picked.length > 1 ? "page" : "component";
+    const controller = begin("generate");
+    try {
+      const images = await sectionImages(picked);
+      const { code: newCode, usage } = await generate(
+        {
+          ...(kind === "page" ? { sections: picked.map((s) => s.html) } : { html: picked[0]!.html }),
+          instructions: DEFAULT_INSTRUCTIONS,
+          format,
+          provider,
+          apiKey,
+          fonts: scrapeResult?.fonts.families,
+          // Screenshots help the AI match the design (a few more tokens per request).
+          ...(useScreenshots && images.some(Boolean) ? { images } : {}),
+        },
+        accessCode,
+        controller.signal,
+        setStreamText,
+      );
+      setUndoStack([]);
+      setRedoStack([]);
+      autoFixUsedRef.current = false;
+      setCodeFormat(format);
+      setCodeKind(kind);
+      const kept = images.filter((img): img is string => !!img);
+      setOriginalImages(kept);
+      setEditorFontCss(scrapeResult?.fonts.css ?? "");
+      setLastUsage(usage);
+      setProjectCost(usage.costUsd);
+      loadIntoEditor(newCode);
+      setStep("EDIT");
+      // Save to history (this browser).
+      const id = newProjectId();
+      setProjectId(id);
+      const now = Date.now();
+      saveProject({
+        id,
+        title: projectTitle(picked, scrapeResult?.url ?? ""),
+        siteUrl: scrapeResult?.url ?? "",
+        kind,
+        format,
+        code: newCode,
+        images: kept,
+        fontCss: scrapeResult?.fonts.css ?? "",
+        fontFamilies: scrapeResult?.fonts.families ?? [],
+        costUsd: usage.costUsd,
+        createdAt: now,
+        updatedAt: now,
+      }).catch(() => {}); // storage unavailable: history just isn't kept
+    } catch (err) {
+      fail(err, kind === "page" ? "Generating the page" : "Generating the component");
+    } finally {
+      finish(controller);
+    }
+  };
 
-      {/* Chat / Refinement Bar */}
-      <div className="h-auto border-t border-gray-800 bg-gray-950 p-4">
-        <div className="max-w-4xl mx-auto w-full">
-          <form
-            onSubmit={handleRefine}
-            className="relative flex items-center gap-2"
-          >
-            <div className="absolute left-4 text-gray-500">
-              <Code className="w-5 h-5" />
-            </div>
-            <input
-              type="text"
-              placeholder="Describe changes (e.g., 'Make the background dark', 'Add more padding')..."
-              className="w-full bg-gray-900 border border-gray-800 rounded-xl pl-12 pr-14 py-4 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-white placeholder-gray-500"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              disabled={isRefining}
-            />
-            <button
-              type="submit"
-              disabled={isRefining || !prompt.trim()}
-              className="absolute right-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isRefining ? (
-                <Loader2 className="animate-spin w-5 h-5" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
-            </button>
-          </form>
-          {isRefining && (
-            <p className="text-center text-xs text-gray-500 mt-2 animate-pulse">
-              AI is generating changes...
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+  const handleGenerate = (section: ScrapedSection) => runGeneration([section]);
 
-// --- Constants ---
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+  const handleGeneratePage = () => {
+    // In the order the user picked them.
+    const picked = selectedIds
+      .map((id) => scrapeResult?.sections.find((s) => s.id === id))
+      .filter((s): s is ScrapedSection => !!s);
+    if (picked.length >= 2) void runGeneration(picked);
+  };
 
-// --- Main App ---
-export default function Home() {
-  const [step, setStep] = useState<"INPUT" | "SELECT" | "EDIT">("INPUT");
-  const [isLoading, setIsLoading] = useState(false);
-  const [sections, setSections] = useState<ScrapedSection[]>([]);
-  const [selectedSection, setSelectedSection] = useState<ScrapedSection | null>(
-    null,
-  );
-  const [code, setCode] = useState("");
-  const [history, setHistory] = useState<string[]>([]); // For undo/redo if needed, or context
+  const toggleSection = (id: string) =>
+    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
-  // AI Settings
-  const [provider, setProvider] = useState<"gemini" | "openai">("gemini");
-  const [apiKey, setApiKey] = useState("");
-  const [accessCode, setAccessCode] = useState("");
+  const handleRefine = async (instructions: string, { auto = false } = {}) => {
+    if (!auto) autoFixUsedRef.current = false;
+    const before = liveCode;
+    const controller = begin("refine");
+    try {
+      // Send the editor's current code (including manual edits and earlier
+      // refinements) so the AI modifies it instead of starting over.
+      const { code: newCode, usage } = await generate(
+        {
+          currentCode: before,
+          instructions,
+          format: codeFormat,
+          provider,
+          apiKey,
+          // The original design, so requests like "match the original spacing" work.
+          ...(useScreenshots && originalImages.length ? { images: originalImages } : {}),
+        },
+        accessCode,
+        controller.signal,
+        setStreamText,
+      );
+      setUndoStack((stack) => [...stack, before].slice(-MAX_UNDO_STEPS));
+      setRedoStack([]);
+      setLastUsage(usage);
+      const total = projectCost + usage.costUsd;
+      setProjectCost(total);
+      if (projectId) updateProject(projectId, { costUsd: total }).catch(() => {});
+      loadIntoEditor(newCode);
+    } catch (err) {
+      fail(err, "Applying your changes");
+    } finally {
+      finish(controller);
+    }
+  };
+
+  const fixPreviewError = (auto = false) => {
+    if (!previewError) return;
+    void handleRefine(
+      `The code fails in the preview with the error below. Fix it without changing anything else.\n${previewError.slice(0, 1500)}`,
+      { auto },
+    );
+  };
+
+  // If fresh AI output doesn't run, ask the AI to fix it once, automatically.
+  // Never while the user is editing by hand (liveCode !== code).
+  const autoFix = useEffectEvent(() => {
+    autoFixUsedRef.current = true;
+    fixPreviewError(true);
+  });
+  useEffect(() => {
+    if (!previewError || busy || currentStep !== "EDIT" || liveCode !== code) return;
+    if (autoFixUsedRef.current) return;
+    const timer = setTimeout(() => autoFix(), 2000);
+    return () => clearTimeout(timer);
+  }, [previewError, busy, currentStep, liveCode, code]);
+
+  const undo = () => {
+    const previous = undoStack.at(-1);
+    if (previous === undefined) return;
+    setUndoStack(undoStack.slice(0, -1));
+    setRedoStack([...redoStack, liveCode]);
+    autoFixUsedRef.current = true; // don't auto-fix a version the user chose
+    loadIntoEditor(previous);
+  };
+  const redo = () => {
+    const next = redoStack.at(-1);
+    if (next === undefined) return;
+    setRedoStack(redoStack.slice(0, -1));
+    setUndoStack([...undoStack, liveCode]);
+    autoFixUsedRef.current = true;
+    loadIntoEditor(next);
+  };
+
+  // Keep the saved project in sync with the editor (AI changes and manual edits).
+  useEffect(() => {
+    if (!projectId || !liveCode) return;
+    const timer = setTimeout(() => {
+      updateProject(projectId, { code: liveCode }).catch(() => {});
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [projectId, liveCode]);
+
+  const openProject = (project: Project) => {
+    cancel();
+    setProjectId(project.id);
+    setCodeFormat(project.format);
+    setCodeKind(project.kind);
+    setOriginalImages(project.images);
+    setEditorFontCss(project.fontCss);
+    setProjectCost(project.costUsd);
+    setLastUsage(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    autoFixUsedRef.current = true; // opened code isn't fresh AI output
+    loadIntoEditor(project.code);
+    setStep("EDIT");
+    setHistoryOpen(false);
+  };
 
   const settingsNode = (
     <ProviderSettings
       provider={provider}
-      setProvider={setProvider}
-      apiKey={apiKey}
-      setApiKey={setApiKey}
+      setProvider={setProviderChoice}
+      keys={keys}
+      setKey={setKey}
+      serverKeys={serverKeys}
       accessCode={accessCode}
       setAccessCode={setAccessCode}
+      format={format}
+      setFormat={setFormat}
+      useScreenshots={useScreenshots}
+      setUseScreenshots={setUseScreenshots}
     />
   );
 
-  const handleScrape = async (url: string) => {
-    setIsLoading(true);
-    try {
-      const { data } = await axios.post(
-        `${API_URL}/api/scrape`,
-        {
-          url,
-          apiKey, // Pass apiKey in body just in case needed for scraping limits
-        },
-        {
-          headers: {
-            "x-api-secret": accessCode,
-          },
-        },
-      );
-      setSections(data.sections);
-      setStep("SELECT");
-    } catch (error: any) {
-      console.error(error);
-      let msg = "Failed to scrape website. Make sure the backend is running.";
-      if (error.response) {
-        msg += `\nError: ${error.response.status} ${error.response.statusText}`;
-        if (error.response.data && error.response.data.error) {
-          msg += `\nDetails: ${error.response.data.error}`;
-        }
-        if (error.response.status === 401) {
-          msg += "\n\nTip: Click the Settings icon and enter the correct Access Code.";
-        }
-      }
-      alert(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const toolbar = (
+    <>
+      <HistoryButton onClick={() => setHistoryOpen(true)} />
+      <ThemeToggle choice={theme.choice} onChange={theme.setChoice} />
+      {settingsNode}
+    </>
+  );
 
-  const handleGenerate = async (section: ScrapedSection) => {
-    setSelectedSection(section);
-    setIsLoading(true); // Global loading overlay or just transition
-    // Ideally show a loader before switching to EDIT
-    try {
-      const { data } = await axios.post(
-        `${API_URL}/api/generate`,
-        {
-          html: section.html,
-          instructions:
-            "Convert this to a modern, responsive React component using Tailwind CSS. Use lucide-react for icons. Use https://placehold.co for images.",
-          provider,
-          apiKey,
-        },
-        {
-          headers: {
-            "x-api-secret": accessCode,
-          },
-        },
-      );
-      setCode(data.code);
-      setHistory([data.code]);
-      setStep("EDIT");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to generate component.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRefine = async (instructions: string) => {
-    if (!selectedSection) return;
-    setIsLoading(true);
-    try {
-      // We pass the *current code* back to AI? Or the original HTML + new instructions?
-      // Passing current code allows for iterative edits. Passing original HTML + aggregated instructions is cleaner but harder to manage state.
-      // Better: Pass the *current code* and ask to modify it.
-      // But our backend expects HTML.
-      // Let's modify the backend to accept 'currentCode' optionally.
-      // For now, let's just send the HTML again with "Previous code was X (optional), User wants: Y".
-      // Actually, standard practice for "Refining" is to send the *Current Component Code* and ask to apply changes.
-
-      // Since I implemented `generateComponent` to take HTML, I should probably stick to that for now,
-      // OR I can cheat and say "Here is the HTML" where HTML is actually the current JSX? No, LLM might get confused.
-
-      // Let's send the ORIGINAL HTML + "Refinement Instructions: The user wants to change the previously generated component. Instructions: [instructions]".
-      // This ensures we don't drift too far from the source, but might lose manual edits.
-      // Given the MVP nature, this is acceptable.
-
-      const { data } = await axios.post(`${API_URL}/api/generate`, {
-        html: selectedSection.html,
-        instructions: `Refine the component. ${instructions}. Previous output context (if needed): preserve the general structure.`,
-        provider,
-        apiKey,
-      });
-      setCode(data.code);
-      setHistory((prev) => [...prev, data.code]);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to refine component.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (step === "INPUT") {
-    return (
-      <UrlInput
-        onScrape={handleScrape}
-        isLoading={isLoading}
-        settings={settingsNode}
+  const banner = (
+    <>
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onOpenProject={openProject}
+        currentProjectId={currentStep === "EDIT" ? projectId : null}
       />
+    </>
+  );
+
+  if (currentStep === "INPUT") {
+    return (
+      <>
+        {banner}
+        <UrlInput
+          onScrape={handleScrape}
+          onInvalid={setError}
+          onCancel={cancel}
+          isLoading={busy === "scrape"}
+          toolbar={toolbar}
+        />
+      </>
     );
   }
 
-  if (step === "SELECT") {
+  if (currentStep === "SELECT" && scrapeResult) {
     return (
-      <div className="min-h-screen bg-white">
-        {isLoading && (
-          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-              <p className="text-gray-600 font-medium">
-                Generating your component...
-              </p>
+      <div className="min-h-screen bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+        {banner}
+        {(busy === "generate" || busy === "scrape") && (
+          <div className="fixed inset-0 bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6">
+            <div className="w-full max-w-2xl">
+              <BusyNotice
+                message={
+                  busy === "scrape"
+                    ? "Loading the page again…"
+                    : selectedIds.length >= 2
+                      ? "Generating your page…"
+                      : "Generating your component…"
+                }
+                onCancel={cancel}
+              >
+                <StreamingOutput text={streamText} />
+              </BusyNotice>
             </div>
           </div>
         )}
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white/90 backdrop-blur z-10">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b px-3 py-3 sm:p-4 backdrop-blur bg-white/90 border-gray-100 dark:bg-gray-950/90 dark:border-gray-800">
           <button
+            type="button"
             onClick={() => setStep("INPUT")}
-            className="text-gray-600 hover:text-black flex items-center gap-2"
+            className="flex shrink-0 items-center gap-2 text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white"
           >
-            <ArrowRight className="w-4 h-4 rotate-180" /> Back
+            <ArrowLeft className="w-4 h-4" aria-hidden /> <span className="hidden sm:inline">New URL</span>
+            <span className="sm:hidden">Back</span>
           </button>
-          <h1 className="font-semibold text-lg">
-            Found {sections.length} Sections
-          </h1>
-          <div className="w-20 flex justify-end">{settingsNode}</div>
+          <h1 className="truncate font-semibold text-base sm:text-lg">Found {scrapeResult.sections.length} Sections</h1>
+          <div className="flex shrink-0 items-center gap-2">{toolbar}</div>
         </div>
-        <SectionSelector sections={sections} onSelect={handleGenerate} />
+        <SectionSelector
+          result={scrapeResult}
+          onSelect={handleGenerate}
+          selectedIds={selectedIds}
+          onToggle={toggleSection}
+          onClearSelection={() => setSelectedIds([])}
+          onGeneratePage={handleGeneratePage}
+          onRefresh={() => handleScrape(scrapeResult.url, { fresh: true })}
+          disabled={busy !== null}
+        />
       </div>
     );
   }
 
-  if (step === "EDIT") {
-    return (
+  return (
+    <>
+      {banner}
       <ComponentEditor
+        format={codeFormat}
+        kind={codeKind}
+        originalImages={originalImages}
         code={code}
-        setCode={setCode}
-        onRefine={handleRefine}
-        isRefining={isLoading}
-        onReset={() => setStep("INPUT")}
-        settings={settingsNode}
+        editorVersion={editorVersion}
+        liveCode={liveCode}
+        fontCss={editorFontCss}
+        onCodeChange={setLiveCode}
+        previewError={previewError}
+        onPreviewErrorChange={setPreviewError}
+        onFixError={() => fixPreviewError()}
+        onRefine={(instructions) => handleRefine(instructions)}
+        isRefining={busy === "refine"}
+        refineText={streamText}
+        onCancelRefine={cancel}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
+        onBack={() => setStep(scrapeResult ? "SELECT" : "INPUT")}
+        toolbar={toolbar}
+        dark={theme.dark}
+        lastUsage={lastUsage}
+        projectCostUsd={projectCost}
       />
-    );
-  }
-
-  return null;
+    </>
+  );
 }
+
+// Rendered only in the browser: the app restores state from sessionStorage on load,
+// which would otherwise mismatch the server-rendered HTML.
+export default dynamic(() => Promise.resolve(App), { ssr: false });

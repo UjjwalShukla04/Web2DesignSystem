@@ -1,0 +1,12 @@
+{
+  // Type-checks the tests together with the sources (tests are run by tsx, not compiled).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src", "test"]
+}

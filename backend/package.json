@@ -2,26 +2,26 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "start": "node dist/index.js",
-    "prestart": "npx playwright install chromium",
     "dev": "nodemon --exec tsx src/index.ts",
-    "build": "npx playwright install chromium && tsc",
-    "postinstall": "npx playwright install chromium",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "postinstall": "node scripts/install-browsers.mjs",
+    "check:remote": "node scripts/check-connection.mjs",
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "body-parser": "^1.20.3",
-    "cheerio": "^1.2.0",
+    "@google/genai": "^2.24.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "openai": "^6.17.0",
     "playwright": "^1.58.1"
   },
@@ -30,8 +30,10 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.1.0",
     "nodemon": "^3.1.11",
-    "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }

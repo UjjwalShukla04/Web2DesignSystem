@@ -125,7 +125,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, error: Error): Promise<
 }
 
 /** Runs `fn` in a fresh, isolated context of the shared browser, with a hard deadline. */
-async function withContext<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
+export async function withContext<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
   await acquireSlot();
   try {
     const browser = await getBrowser();

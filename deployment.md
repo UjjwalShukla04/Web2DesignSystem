@@ -91,6 +91,7 @@ Now we deploy the Next.js frontend and connect it to the backend.
 ## 6. Limitations
 
 - **Rate limits, daily AI limits, the scrape queue and the scrape cache live in memory.** They reset when the server restarts and are per instance. That's fine for a single Render instance; if you scale to several instances, each gets its own limits (a shared store such as Redis would be needed to enforce one global limit).
-- **Sites with bot protection** (e.g. Cloudflare challenges) block headless browsers, so they return few or no sections.
+- **Sites with bot protection** (e.g. Cloudflare challenges) block headless browsers, so they return few or no sections. Users can capture such pages (and logged-in pages) with the browser extension instead (`extension/README.md`): in its settings, set the backend address to your Render URL and the app address to your Vercel URL.
+- **Captures and match scores use memory and the browser slot.** Extension captures are kept in memory (at most 20 and 80MB, 30 minutes). Each match score renders the code in the shared browser, so it waits in the same queue as scrapes (`MAX_CONCURRENT_SCRAPES`).
 - **Free Render instances sleep when idle.** The first request after a while can take up to a minute; the frontend wakes the backend when it loads and tells users when a request is slow.
 

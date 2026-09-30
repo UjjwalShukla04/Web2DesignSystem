@@ -24,6 +24,8 @@ export interface ScrapeResult {
   scrapedAt: string;
   /** True when the server reused a recent scrape of the same URL. */
   cached: boolean;
+  /** True when it was captured in the user's own browser with the extension. */
+  captured?: boolean;
 }
 
 export type Provider = "gemini" | "openai";
@@ -71,6 +73,13 @@ export function normalizeUrl(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** The HTTP status of a failed request, if the server answered. */
+export function errorStatus(error: unknown): number | undefined {
+  if (axios.isAxiosError(error)) return error.response?.status;
+  if (error instanceof ApiError) return error.status;
+  return undefined;
 }
 
 function isCancel(error: unknown): boolean {
@@ -132,6 +141,16 @@ export async function scrape(
   return data;
 }
 
+/** Loads a page captured with the browser extension. */
+export async function fetchCapture(id: string, accessCode: string, signal: AbortSignal): Promise<ScrapeResult> {
+  const { data } = await axios.get<ScrapeResult>(`${API_URL}/api/captures/${encodeURIComponent(id)}`, {
+    headers: { "x-api-secret": accessCode },
+    signal,
+    timeout: 60_000,
+  });
+  return data;
+}
+
 export interface GenerateRequest {
   /** One section (a component)... */
   html?: string;
@@ -146,6 +165,8 @@ export interface GenerateRequest {
   fonts?: string[];
   /** Screenshots of the original section(s): one per section for a page (null if none). */
   images?: (string | null)[];
+  /** Refinements: a screenshot of how `currentCode` renders now (auto-improve). */
+  renderImage?: string;
 }
 
 /**
@@ -204,6 +225,64 @@ export async function generate(
     }
   }
   throw new Error("The connection closed before the component was finished.");
+}
+
+/** Formats the match score can render (the backend renders them in a headless browser). */
+export const FIDELITY_FORMATS: readonly OutputFormat[] = ["react", "html"];
+
+/** How closely rendered code matches the original screenshot (mirrors backend/src/fidelity.ts). */
+export interface FidelityResult {
+  /** 0–100 overall. */
+  score: number;
+  /** 0–1: layout and shapes. */
+  structure: number;
+  /** 0–1: colors. */
+  color: number;
+  /** 0–1: height ratio. */
+  size: number;
+  /** Render height ÷ original height: above 1 = the render is taller. */
+  heightRatio: number;
+  /** Screenshot of the render (JPEG data URL, scaled down). */
+  render: string;
+}
+
+export interface FidelityRequest {
+  code: string;
+  format: OutputFormat;
+  /** Screenshots of the original section(s), top to bottom. */
+  images: string[];
+  fontCss: string;
+  /** Width of the original section in CSS px (the render uses it as its viewport width). */
+  width: number;
+}
+
+/** Renders `code` on the server and scores it against the original. Costs no AI tokens. */
+export async function measureFidelity(
+  request: FidelityRequest,
+  accessCode: string,
+  signal: AbortSignal,
+): Promise<FidelityResult> {
+  const { data } = await axios.post<FidelityResult>(`${API_URL}/api/fidelity`, request, {
+    headers: { "x-api-secret": accessCode },
+    signal,
+    // Shares the server's browser queue with scrapes.
+    timeout: 150_000,
+  });
+  return data;
+}
+
+/** Renders `code` on the server; returns a screenshot (JPEG data URL) to show the AI. */
+export async function renderPreview(
+  request: Omit<FidelityRequest, "images">,
+  accessCode: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const { data } = await axios.post<{ render: string }>(`${API_URL}/api/render`, request, {
+    headers: { "x-api-secret": accessCode },
+    signal,
+    timeout: 60_000,
+  });
+  return data.render;
 }
 
 /** The caller's usage today, or null if unavailable. */

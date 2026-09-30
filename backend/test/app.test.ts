@@ -100,6 +100,63 @@ test("screenshots are validated", async () => {
   assert.equal((await post("/api/generate", { html: "<p>x</p>", images: Array(9).fill(png) }, withSecret)).status, 400);
 });
 
+test("the render screenshot is only accepted for refinements", async () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const code = "export default function C() { return <div />; }";
+  assert.equal((await post("/api/generate", { currentCode: code, images: [png], renderImage: png }, withSecret)).status, 200);
+  assert.equal((await post("/api/generate", { html: "<p>x</p>", renderImage: png }, withSecret)).status, 400);
+});
+
+test("extension captures: upload, then open by id", async () => {
+  const capture = {
+    url: "https://intranet.example/dashboard",
+    sections: [{ id: "section-0", tagName: "header", text: "Hi", html: "<header>Hi</header>", rect: { x: 0, y: 0, width: 1440, height: 120 } }],
+    screenshot: null,
+    screenshotSize: null,
+    fonts: { families: [], css: "" },
+  };
+  assert.equal((await post("/api/captures", capture)).status, 401);
+  assert.equal((await post("/api/captures", { ...capture, sections: [] }, withSecret)).status, 400);
+  const created = await post("/api/captures", capture, withSecret);
+  assert.equal(created.status, 201);
+  const { id } = await created.json();
+  assert.equal((await fetch(`${base}/api/captures/${id}`)).status, 401);
+  const res = await fetch(`${base}/api/captures/${id}`, { headers: withSecret });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.url, capture.url);
+  assert.equal(body.sections[0].html, "<header>Hi</header>");
+  assert.equal(body.captured, true);
+  assert.ok(body.scrapedAt);
+  const missing = await fetch(`${base}/api/captures/00000000-0000-0000-0000-000000000000`, { headers: withSecret });
+  assert.equal(missing.status, 404);
+  assert.match((await missing.json()).error, /expired/);
+  // Bigger than the normal 12mb body limit, within the 20mb capture limit.
+  const big = { ...capture, sections: Array.from({ length: 40 }, (_, i) => ({ ...capture.sections[0], id: `s${i}`, html: "x".repeat(99_000) })) };
+  const screenshot = "data:image/jpeg;base64," + "A".repeat(7_000_000);
+  const large = await post("/api/captures", { ...big, screenshot, screenshotSize: { width: 1440, height: 8000 } }, withSecret);
+  assert.equal(large.status, 201);
+});
+
+test("fidelity requires the secret and validates its input before rendering", async () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const code = "export default function C() { return <div />; }";
+  assert.equal((await post("/api/fidelity", { code, images: [png] })).status, 401);
+  assert.equal((await post("/api/fidelity", { code, images: [png], apiKey: "x" })).status, 401);
+  assert.equal((await post("/api/fidelity", { code: "", images: [png] }, withSecret)).status, 400);
+  assert.equal((await post("/api/fidelity", { code, images: [] }, withSecret)).status, 400);
+  assert.equal((await post("/api/fidelity", { code, images: ["https://evil.example/a.png"] }, withSecret)).status, 400);
+  assert.equal((await post("/api/fidelity", { code, images: [png], width: 5000 }, withSecret)).status, 400);
+  assert.equal((await post("/api/fidelity", { code, images: [png], fontCss: 1 }, withSecret)).status, 400);
+  assert.equal((await post("/api/render", { code })).status, 401);
+  assert.equal((await post("/api/render", { code: "" }, withSecret)).status, 400);
+  assert.equal((await post("/api/render", { code, format: "svelte" }, withSecret)).status, 400);
+  assert.equal((await post("/api/render", { code, width: 100 }, withSecret)).status, 400);
+  const vue = await post("/api/fidelity", { code, images: [png], format: "vue" }, withSecret);
+  assert.equal(vue.status, 400);
+  assert.match((await vue.json()).error, /react and html/);
+});
+
 test("daily limit for the server's key, not for users' own keys", async () => {
   const limited = createApp({ ...config, limits: { perUserPerDay: 2, dailyBudgetUsd: 0 } }).listen(0);
   await new Promise((resolve) => limited.once("listening", resolve));

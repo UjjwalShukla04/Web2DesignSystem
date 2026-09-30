@@ -104,17 +104,21 @@ export const SectionSelector = ({
           </span>
           <span aria-hidden>·</span>
           <span>
-            {result.cached ? "Saved copy from " : "Scraped "}
+            {result.captured ? "Captured in your browser " : result.cached ? "Saved copy from " : "Scraped "}
             {timeAgo(result.scrapedAt)}
           </span>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={disabled}
-            className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
-          >
-            <RefreshCw className="w-3.5 h-3.5" aria-hidden /> Refresh
-          </button>
+          {/* A captured page may need your login, which the server doesn't have: it is
+              refreshed by capturing it again with the extension. */}
+          {!result.captured && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={disabled}
+              className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+            >
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden /> Refresh
+            </button>
+          )}
         </p>
       </div>
 

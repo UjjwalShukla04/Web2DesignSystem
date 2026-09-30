@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Turn } from "../src/generator.js";
 
 // No AI key: generateComponent returns its placeholder instead of calling an API.
 // (dotenv never overrides a variable that is already set, even to "".)
@@ -13,6 +14,9 @@ const {
   buildRefinePrompt,
   generateComponent,
   generateWithContinuation,
+  generateComplete,
+  isAbbreviated,
+  ABBREVIATED_OUTPUT,
   parseImageDataUrl,
   OUTPUT_TOO_LONG,
   describeProviderError,
@@ -100,6 +104,55 @@ test("refine prompt keeps the current code and the import rules", () => {
   assert.ok(prompt.includes(code));
   assert.match(prompt, /make the button green/);
   assert.match(prompt, /Only import from 'react' and 'lucide-react'/);
+  assert.match(prompt, /Carry it out fully/);
+  assert.match(prompt, /Return the COMPLETE file/);
+  assert.match(prompt, /lucide-react icon components \(only names that really exist/);
+  assert.match(buildRefinePrompt("<template/>", "x", "vue"), /lucide-vue-next icon components/);
+});
+
+test("placeholder comments that skip code are detected", () => {
+  const before = "export default function A() {\n  return <div>\n    <p>a</p>\n  </div>;\n}";
+  for (const lazy of [
+    "{/* ...rest of the footer unchanged */}",
+    "// ... existing code",
+    "{/* Same as before */}",
+    "<!-- remaining links omitted for brevity -->",
+    "  // ...",
+    "{/* … */}",
+  ]) {
+    assert.ok(isAbbreviated(before.replace("<p>a</p>", lazy), before), lazy);
+  }
+  assert.ok(!isAbbreviated(before.replace("<p>a</p>", "<p>b</p>"), before), "a normal edit");
+  assert.ok(!isAbbreviated(before.replace("<p>a</p>", "{/* Hero section */}"), before), "ordinary comments");
+  assert.ok(!isAbbreviated(`${before}\n// rest of the page is rendered by Layout`, `${before}\n// rest of the page is rendered by Layout`), "placeholders already in the code");
+});
+
+test("a shortened refinement is asked again once for the complete file", async () => {
+  const before = "export default function A() {\n  return <div><p>a</p><p>b</p></div>;\n}";
+  const replies = [
+    { text: "export default function A() {\n  return <div>{/* ...rest unchanged */}</div>;\n}", truncated: false, usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.001 } },
+    { text: "export default function A() {\n  return <div><p>A</p><p>b</p></div>;\n}", truncated: false, usage: { inputTokens: 120, outputTokens: 20, costUsd: 0.002 } },
+  ];
+  const turns: Turn[][] = [];
+  const result = await generateComplete(async (t) => {
+    turns.push(t);
+    return replies[turns.length - 1]!;
+  }, before);
+  assert.match(result.text, /<p>A<\/p>/);
+  assert.deepEqual(result.usage, { inputTokens: 220, outputTokens: 30, costUsd: 0.003 });
+  assert.deepEqual(turns[0], []);
+  assert.equal(turns[1]![0]!.text, replies[0]!.text, "the model sees its shortened reply");
+  assert.match(turns[1]![1]!.text, /COMPLETE file/);
+
+  // Shortened twice: fails instead of replacing the user's code.
+  await assert.rejects(
+    generateComplete(async () => replies[0]!, before),
+    (error: Error) => error.message === ABBREVIATED_OUTPUT,
+  );
+  // First generations aren't checked.
+  let calls = 0;
+  await generateComplete(async () => (calls++, replies[0]!));
+  assert.equal(calls, 1);
 });
 
 test("output cut off at the limit is continued and joined", async () => {
@@ -136,8 +189,12 @@ test("screenshot rules are added only when images are attached", () => {
   assert.match(buildGeneratePrompt("<p>x</p>", "", [], "react", 1), /Screenshot:\*\* The attached image shows this section/);
   const page = buildPagePrompt(["<p>a</p>", "<p>b</p>", "<p>c</p>"], "", [], "react", [1, 3]);
   assert.match(page, /Screenshots:\*\* The attached images show sections 1, 3 on the original page/);
-  assert.match(buildRefinePrompt("code", "match the original", "react", 1), /Original design:\*\* The attached image shows/);
-  assert.doesNotMatch(buildRefinePrompt("code", "x"), /Original design/);
+  assert.match(buildRefinePrompt("code", "match the original", "react", 1), /Original design:\*\* The first attached image shows/);
+  assert.doesNotMatch(buildRefinePrompt("code", "x"), /Original design|Current render/);
+  const withRender = buildRefinePrompt("code", "bigger title", "react", 1, true);
+  assert.match(withRender, /Current render:\*\* The LAST attached image/);
+  assert.match(withRender, /Compare it with the original/);
+  assert.doesNotMatch(buildRefinePrompt("code", "bigger title", "react", 0, true), /Compare it with the original/, "no original to compare with");
 });
 
 test("parseImageDataUrl accepts only base64 JPEG/PNG/WebP data URLs", () => {

@@ -10,6 +10,7 @@
     "build": "tsc",
     "postinstall": "node scripts/install-browsers.mjs",
     "check:remote": "node scripts/check-connection.mjs",
+    "build:extension": "node scripts/build-extension.mjs",
     "test": "tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
@@ -20,6 +21,7 @@
     "@google/genai": "^2.24.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.27.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "openai": "^6.17.0",

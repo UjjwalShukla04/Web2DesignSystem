@@ -5,6 +5,8 @@ Paste a website URL, pick a section of the page, and get an editable, **Tailwind
 - **Output formats:** React, Vue, Svelte or plain HTML (⚙ Settings → Output).
 - **Whole pages:** pick up to 8 sections with the **+** buttons and generate one page with a shared color and font palette.
 - **Matches the look:** the AI also gets a screenshot of each section (can be turned off in ⚙ Settings), and the editor's **Compare** view shows the original next to the live preview.
+- **Match score:** every AI change is rendered in the backend's browser and compared with the original screenshot ("Match 74%" in the editor; layout, colors and height). **Auto-improve** shows the AI its render next to the original and repeats, up to 3 rounds, until your target (80–95%) is reached; the best version is kept and one Undo restores yours. Works for React and HTML output.
+- **Browser extension** (`extension/`): capture the page you're viewing, including logged-in pages and pages that block headless browsers, and open it in the app. See [extension/README.md](extension/README.md).
 - **Real device widths:** preview at phone (390px), fit, or desktop (1280px, scaled to fit) width.
 - **Long output:** if the AI hits its output limit, it's asked to continue where it stopped.
 - **History:** everything you generate is saved in your browser (IndexedDB), including manual edits; reopen it any time from the 🕘 History drawer.
@@ -95,7 +97,8 @@ In the app, ⚙️ **Settings** has:
 | backend | `npm run dev` | Run with auto-reload (tsx + nodemon) |
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled server |
-| backend | `npm test` | Tests: SSRF guard, config, API routes, and section extraction in headless Chromium (no network needed) |
+| backend | `npm test` | Tests: SSRF guard, config, API routes, captures, section extraction and the match score in headless Chromium (one React-render test needs internet and is skipped without it) |
+| backend | `npm run build:extension` | Bundle the extension's content script (`extension/content.js`) from the shared extraction code |
 | backend | `npm run typecheck` | Type-check sources and tests |
 | backend | `npm run check:remote -- <url>` | Check that a deployed backend is reachable |
 | frontend | `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
@@ -115,6 +118,10 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all of these on every push and 
 | `POST /api/generate` `{ sections: [...], ... }` | Combines 2–8 sections into one page |
 | `POST /api/generate` `{ currentCode, instructions, ... }` | Applies a change to an existing component |
 | … with `"stream": true` | Streams the AI's output as newline-delimited JSON events |
+| `POST /api/fidelity` `{ code, format, images, fontCss?, width? }` | Renders React/HTML code and scores it against the original screenshot(s): `{ score, structure, color, size, heightRatio, render }` |
+| `POST /api/generate` `{ currentCode, images, renderImage, ... }` | Refinement that also sees how the current code renders (the app sends it with every change request and Auto-improve) |
+| `POST /api/render` `{ code, format, fontCss?, width? }` | Renders React/HTML code and returns a screenshot `{ render }` |
+| `POST /api/captures` / `GET /api/captures/:id` | Upload a page captured by the extension / open it (kept 30 minutes) |
 | `GET /api/usage` | Your AI usage today with the server's key, and the limits (public; only your own numbers) |
 | `GET /api/providers` | Which AI providers have a key on the server, e.g. `{ "gemini": true, "openai": false }` (public; never returns keys) |
 | `GET /health/browser` | Checks that the headless browser can start |

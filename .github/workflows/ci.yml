@@ -24,6 +24,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: extension/content.js is up to date
+        run: npm run build:extension && git diff --exit-code ../extension/content.js
 
   frontend:
     runs-on: ubuntu-latest

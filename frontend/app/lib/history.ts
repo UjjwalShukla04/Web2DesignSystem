@@ -16,6 +16,8 @@ export interface Project {
   images: string[];
   fontCss: string;
   fontFamilies: string[];
+  /** Width of the original section in CSS px, for the match score (older projects: 1280). */
+  width?: number;
   /** Estimated AI cost of this project so far (USD). */
   costUsd: number;
   createdAt: number;

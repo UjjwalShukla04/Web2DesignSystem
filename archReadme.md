@@ -30,6 +30,7 @@ The application follows a decoupled **Client-Server** architecture:
 | `app/lib/theme.ts`, `theme-boot.ts` | Light / dark / system theme (class-based `dark:` variant, applied before first paint) |
 | `app/lib/media.ts` | `useMediaQuery` (phone layout) |
 | `app/components/HistoryPanel.tsx` | History drawer |
+| `app/components/FidelityPanel.tsx` | "Match X%" badge and panel: score breakdown, render next to the original, target, Auto-improve |
 | `app/components/ThemeToggle.tsx` | Theme button |
 | `app/components/UrlInput.tsx` | Step 1: URL entry |
 | `app/components/SectionSelector.tsx` | Step 2: section cards with screenshot previews |
@@ -52,7 +53,10 @@ The application follows a decoupled **Client-Server** architecture:
 | `src/scraper.ts` | Shared browser, sandbox, concurrency queue, per-scrape deadline, result cache |
 | `src/usage.ts` | Token usage → estimated cost; per-user daily limit and daily budget for the server's keys |
 | `src/cache.ts` | In-memory result cache (TTL, LRU eviction, sharing of identical in-flight requests) |
-| `src/extract.ts` | Runs in the page: section detection, style capture, screenshot, fonts |
+| `src/extract.ts` | Scrape orchestration with Playwright: scrolling, the two passes, screenshot |
+| `src/inpage.ts` | Code that runs inside the page (section detection, style capture, fonts). Shared with the browser extension, which bundles it |
+| `src/fidelity.ts` | Match score: renders React (esbuild + esm.sh) or HTML in the shared browser and compares it with the original screenshot |
+| `src/captures.ts` | Validation and in-memory store for extension captures (30 min, at most 20, 80MB) |
 | `src/netguard.ts` | SSRF protection: URL validation and the filtering proxy the browser uses |
 | `src/generator.ts` | Prompts per output format, page prompts with a shared palette, Gemini/OpenAI streaming calls, extracting code from the reply |
 | `src/logger.ts` | Console + optional log file |
@@ -196,6 +200,27 @@ Rate limit: 20 requests/minute per IP.
   ```
   or `{"type":"error","error":"..."}` as the last line. Closing the connection cancels the AI call.
 
+### `POST /api/fidelity`
+
+Rate limit: 20 requests/minute per IP. Needs the access code (like scraping: it uses the server's browser). Costs no AI tokens.
+
+- **Body**: `{ "code": "...", "format": "react" | "html", "images": ["data:image/jpeg;base64,..."], "fontCss": "@font-face ...", "width": 1232 }`. `images`: 1–8 screenshots of the original, top to bottom. `width` (320–1920, default 1280): the original section's width in CSS pixels; the code is rendered at that viewport width.
+- **How**: React code is compiled with esbuild and rendered with React 19, lucide-react (from esm.sh) and the Tailwind CDN, like the editor's preview; HTML is rendered as is. The full-height render is screenshotted and compared with the original: both are scaled to 192px wide and split into 16px tiles, each tile is matched with a small position tolerance in both directions, and tiles with content or color count more than empty background.
+- **Response**: `{ score: 0–100, structure: 0–1, color: 0–1, size: 0–1, heightRatio, render }`. `score` = 50% structure (SSIM of matched tiles) + 35% color + 15% size (height ratio). `heightRatio` > 1 means the render is taller. `render` is a JPEG data URL of the render (≤1024×2000).
+- **Errors**: `422` when the code doesn't compile, throws, or doesn't finish rendering in 30s; `503`/`504` when the browser is busy or too slow.
+- **Calibration** (Aetna footer): identical 100, shifted 30px 92, the AI's first version 55, a hand-fixed version 74, a different section 31–38.
+
+`POST /api/generate` also accepts `renderImage` (a data URL, only with `currentCode`): a screenshot of how `currentCode` renders now, attached after the originals, so the AI sees what a request refers to. The app sends it with every change request (reusing the match score's render, or getting one from `POST /api/render`, which takes the same body as `/api/fidelity` without `images` and returns `{ render }`) and with Auto-improve.
+
+Refinements must return the complete file: a reply that skips code with placeholder comments ("// ...rest unchanged") is sent back once for the full file, and if it's shortened again the request fails and the user's code stays as it was.
+
+### `POST /api/captures` and `GET /api/captures/:id`
+
+Used by the browser extension (`extension/`). Both need the access code. Rate limits: 10 uploads/minute; reads share the scrape limit.
+
+- **POST body** (up to 20MB): `{ url, sections: [{ id, tagName, text, html, rect }], screenshot, screenshotSize, fonts: { families, css } }`, the same shape as a scrape result. Validated field by field (1–40 sections, each HTML ≤ 100,000 characters, screenshot ≤ 8,000px tall). Returns `201 { id, expiresInSeconds }`.
+- **GET** returns the capture like a scrape result, plus `captured: true`; `404` once it has expired (30 minutes) or was dropped (at most 20 captures and 80MB are kept; oldest first).
+
 ### `GET /api/usage`
 
 Public. The caller's (client IP's) usage of the server's keys today and the limits: `{ requests, costUsd, remaining, budgetExhausted, limits: { perUserPerDay, dailyBudgetUsd } }`. Generations that use the server's key return `429` when the per-user limit or the daily budget is reached; failed generations don't count. Every generate response includes `usage: { inputTokens, outputTokens, costUsd }` (estimated from the provider's reported tokens and the price table).
@@ -217,7 +242,9 @@ Starts the shared browser if needed and loads a blank page. Returns `200` "Brows
 - **Hang protection**: every scrape has a hard deadline.
 - **Auth**: `API_SECRET` compared in constant time. In production the server won't start without `API_SECRET` (unless `ALLOW_OPEN_ACCESS=true`) or without `ALLOWED_ORIGINS`.
 - **Rate limits**: per client IP (`TRUST_PROXY` controls how the IP is read behind a reverse proxy).
-- **Input and output limits**: 1MB JSON bodies, typed and length-checked fields, capped section count and size.
+- **Input and output limits**: JSON bodies up to 12MB (20MB for extension captures), typed and length-checked fields, capped section count and size.
+- **Match score rendering**: generated code runs in its own isolated browser context of the shared browser, with the same SSRF-filtering proxy, deadline and queue as scraping; the render page itself is served by request interception, never from the network.
+- **Extension captures**: stored under random (UUID) ids for 30 minutes, readable only with the access code; only the expected fields are kept.
 - **Generated code** runs only inside Sandpack's iframe, on a separate origin.
 - **Browser storage**: the API key and access code are kept in `sessionStorage` (cleared when the tab closes).
 
@@ -241,7 +268,8 @@ Starts the shared browser if needed and loads a blank page. Returns `200` "Brows
 
 ## 7. Testing
 
-- `backend/test/` (`npm test`): SSRF guard and proxy, config rules, API routes (auth, validation, CORS, rate limits, streaming), and section extraction run in headless Chromium against a local fixture page. No network access needed.
+- `backend/test/` (`npm test`): SSRF guard and proxy, config rules, API routes (auth, validation, CORS, rate limits, streaming, captures, fidelity), capture validation and store, section extraction against a local fixture page, and the match score (identical output scores 100, closer output scores higher, a blank render scores low) in headless Chromium. One test renders React from esm.sh and is skipped without internet.
+- CI also checks that `extension/content.js` is up to date with `npm run build:extension`.
 - `frontend/app/lib/api.test.ts` (`npm test`): URL normalization, error messages, streamed-response parsing.
 - CI (`.github/workflows/ci.yml`): type-check, lint, tests and production builds for both halves on every push and pull request.
 
@@ -260,7 +288,10 @@ Starts the shared browser if needed and loads a blank page. Returns `200` "Brows
 │   │   ├── app.ts             # Express app: auth, limits, routes
 │   │   ├── scraper.ts         # Shared browser, queue, deadline, cache
 │   │   ├── cache.ts           # Scrape result cache
-│   │   ├── extract.ts         # In-page section extraction
+│   │   ├── extract.ts         # Scrape orchestration (Playwright)
+│   │   ├── inpage.ts          # In-page extraction (shared with the extension)
+│   │   ├── fidelity.ts        # Match score: render + compare
+│   │   ├── captures.ts        # Extension captures
 │   │   ├── netguard.ts        # SSRF protection + filtering proxy
 │   │   ├── generator.ts       # Prompts (formats, pages) + Gemini/OpenAI streaming
 │   │   ├── logger.ts          # Logging
@@ -268,7 +299,8 @@ Starts the shared browser if needed and loads a blank page. Returns `200` "Brows
 │   ├── test/                  # node:test suites (run with tsx)
 │   ├── scripts/
 │   │   ├── install-browsers.mjs  # postinstall: installs Chromium
-│   │   └── check-connection.mjs  # npm run check:remote -- <url>
+│   │   ├── check-connection.mjs  # npm run check:remote -- <url>
+│   │   └── build-extension.mjs   # npm run build:extension
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── tsconfig.test.json
@@ -282,6 +314,13 @@ Starts the shared browser if needed and loads a blank page. Returns `200` "Brows
 │   │   └── globals.css        # Tailwind v4 setup
 │   ├── next.config.ts
 │   └── package.json
+│
+├── extension/                 # Chrome extension (Manifest V3): capture the page you're viewing
+│   ├── manifest.json
+│   ├── popup.html, popup.js   # Consent, settings, Capture button
+│   ├── background.js          # Capture, stitched screenshot, upload, open the app
+│   ├── src/content.ts         # In-page entry (bundles backend/src/inpage.ts)
+│   └── content.js             # Built by npm run build:extension
 │
 ├── README.md                  # Overview & local setup
 ├── archReadme.md              # This document

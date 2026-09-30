@@ -9,7 +9,9 @@ import {
   checkBrowser,
   ScraperBusyError,
   ScrapeTimeoutError,
+  withContext,
 } from "./scraper.js";
+import { measureFidelity, renderForAI, FIDELITY_FORMATS, RenderError, type FidelityFormat } from "./fidelity.js";
 import {
   generateComponent,
   parseImageDataUrl,
@@ -22,6 +24,7 @@ import {
 } from "./generator.js";
 import { UnsafeUrlError } from "./netguard.js";
 import { createUsageTracker, QuotaError } from "./usage.js";
+import { createCaptureStore, validateCapture, CAPTURE_TTL_MS } from "./captures.js";
 
 const MAX_HTML_BODY_CHARS = 200_000;
 const MAX_CURRENT_CODE_CHARS = 100_000;
@@ -30,6 +33,7 @@ const MAX_URL_CHARS = 2_048;
 const MAX_API_KEY_CHARS = 500;
 const MAX_IMAGES = 8;
 const MAX_IMAGE_CHARS = 3_000_000; // ~2.2MB of image data per screenshot
+const MAX_FONT_CSS_CHARS = 50_000;
 
 function safeEqual(a: string, b: string): boolean {
   // Hash both sides so the comparison is constant-time regardless of length.
@@ -41,10 +45,14 @@ function safeEqual(a: string, b: string): boolean {
 export function createApp(config: ServerConfig) {
   const app = express();
   const usageTracker = createUsageTracker(config.limits);
+  const captures = createCaptureStore();
   app.set("trust proxy", config.trustProxy);
   app.use(cors(config.allowedOrigins === "*" ? {} : { origin: config.allowedOrigins }));
   // Room for a page request: up to 8 sections of scraped HTML plus their screenshots.
-  app.use(express.json({ limit: "12mb" }));
+  // Extension captures carry a whole page (up to 40 sections and a full-page screenshot).
+  const json = express.json({ limit: "12mb" });
+  const captureJson = express.json({ limit: "20mb" });
+  app.use((req, res, next) => (req.path === "/api/captures" ? captureJson : json)(req, res, next));
 
   // --- Health Check (Public) ---
   app.get("/", (req, res) => {
@@ -114,6 +122,22 @@ export function createApp(config: ServerConfig) {
     message: { error: "Too many generate requests. Please wait a minute and try again." },
   });
 
+  const fidelityLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { error: "Too many match checks. Please wait a minute and try again." },
+  });
+
+  const captureLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { error: "Too many captures. Please wait a minute and try again." },
+  });
+
   // --- Browser Health Check (authenticated, for diagnostics) ---
   app.get("/health/browser", scrapeLimiter, async (req, res) => {
     try {
@@ -160,10 +184,109 @@ export function createApp(config: ServerConfig) {
     }
   });
 
+  // --- Captures from the browser extension ---
+  app.post("/api/captures", captureLimiter, (req, res) => {
+    const result = validateCapture(req.body);
+    if ("error" in result) return res.status(400).json({ error: result.error });
+    const id = captures.put(result.capture);
+    log(`[CAPTURE] Stored ${result.capture.sections.length} sections from ${JSON.stringify(result.capture.url)}`);
+    res.status(201).json({ id, expiresInSeconds: CAPTURE_TTL_MS / 1000 });
+  });
+
+  app.get("/api/captures/:id", scrapeLimiter, (req, res) => {
+    const id = String(req.params.id);
+    const capture = /^[0-9a-f-]{36}$/.test(id) ? captures.get(id) : null;
+    if (!capture) {
+      return res.status(404).json({
+        error: `This capture doesn't exist or has expired (captures are kept for ${CAPTURE_TTL_MS / 60_000} minutes). Capture the page again.`,
+      });
+    }
+    const { capturedAt, ...rest } = capture;
+    // Same shape as a scrape result, so the app treats both alike.
+    res.json({ ...rest, scrapedAt: capturedAt, cached: false, captured: true });
+  });
+
+  // --- Fidelity: render code in the headless browser and compare it with the original ---
+  app.post("/api/fidelity", fidelityLimiter, async (req, res) => {
+    const { code, format = "react", images, fontCss = "", width } = req.body ?? {};
+    if (typeof code !== "string" || !code.trim() || code.length > MAX_CURRENT_CODE_CHARS) {
+      return res.status(400).json({ error: "code must be a non-empty string" });
+    }
+    if (!FIDELITY_FORMATS.includes(format)) {
+      return res.status(400).json({
+        error: `The match score supports ${FIDELITY_FORMATS.join(" and ")} code only`,
+      });
+    }
+    if (
+      !Array.isArray(images) ||
+      images.length < 1 ||
+      images.length > MAX_IMAGES ||
+      !images.every(
+        (img) => typeof img === "string" && img.length <= MAX_IMAGE_CHARS && parseImageDataUrl(img) !== null,
+      )
+    ) {
+      return res.status(400).json({
+        error: `images must be a list of 1 to ${MAX_IMAGES} base64 JPEG/PNG/WebP data URLs of the original`,
+      });
+    }
+    if (typeof fontCss !== "string" || fontCss.length > MAX_FONT_CSS_CHARS) {
+      return res.status(400).json({ error: "fontCss must be a string" });
+    }
+    if (width !== undefined && !(Number.isInteger(width) && width >= 320 && width <= 1920)) {
+      return res.status(400).json({ error: "width must be a whole number from 320 to 1920" });
+    }
+    try {
+      const result = await withContext((context) =>
+        measureFidelity(context, { code, format: format as FidelityFormat, fontCss, originalImages: images, width }),
+      );
+      log(`[FIDELITY] Score ${result.score}`);
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof RenderError) return res.status(422).json({ error: error.message });
+      if (error instanceof ScraperBusyError) return res.status(503).json({ error: error.message });
+      if (error instanceof ScrapeTimeoutError) {
+        return res.status(504).json({ error: "Rendering the code took too long." });
+      }
+      logError("[FIDELITY] Error:", error);
+      const summary = String(error?.message ?? "").split("\n")[0];
+      res.status(500).json({ error: `Could not measure the match. ${summary}`.trim() });
+    }
+  });
+
+  // --- Render code to an image (shown to the AI with a refinement request) ---
+  app.post("/api/render", fidelityLimiter, async (req, res) => {
+    const { code, format = "react", fontCss = "", width } = req.body ?? {};
+    if (typeof code !== "string" || !code.trim() || code.length > MAX_CURRENT_CODE_CHARS) {
+      return res.status(400).json({ error: "code must be a non-empty string" });
+    }
+    if (!FIDELITY_FORMATS.includes(format)) {
+      return res.status(400).json({ error: `Rendering supports ${FIDELITY_FORMATS.join(" and ")} code only` });
+    }
+    if (typeof fontCss !== "string" || fontCss.length > MAX_FONT_CSS_CHARS) {
+      return res.status(400).json({ error: "fontCss must be a string" });
+    }
+    if (width !== undefined && !(Number.isInteger(width) && width >= 320 && width <= 1920)) {
+      return res.status(400).json({ error: "width must be a whole number from 320 to 1920" });
+    }
+    try {
+      const render = await withContext((context) =>
+        renderForAI(context, { code, format: format as FidelityFormat, fontCss, width }),
+      );
+      res.json({ render });
+    } catch (error: any) {
+      if (error instanceof RenderError) return res.status(422).json({ error: error.message });
+      if (error instanceof ScraperBusyError) return res.status(503).json({ error: error.message });
+      if (error instanceof ScrapeTimeoutError) return res.status(504).json({ error: "Rendering the code took too long." });
+      logError("[RENDER] Error:", error);
+      res.status(500).json({ error: "Could not render the code." });
+    }
+  });
+
   app.post("/api/generate", generateLimiter, async (req, res) => {
     log("[GENERATE] Request received");
-    const { html, sections, currentCode, instructions, provider, format, apiKey, fonts, images, stream } =
-      req.body ?? {};
+    const {
+      html, sections, currentCode, instructions, provider, format, apiKey, fonts, images, renderImage, stream,
+    } = req.body ?? {};
     // Refinements send the current code; first generations send one section's HTML,
     // or several sections to combine into a page.
     if (currentCode !== undefined) {
@@ -203,6 +326,19 @@ export function createApp(config: ServerConfig) {
     ) {
       return res.status(400).json({
         error: `images must be a list of up to ${MAX_IMAGES} base64 JPEG/PNG/WebP data URLs (or null)`,
+      });
+    }
+    if (
+      renderImage !== undefined &&
+      !(
+        currentCode !== undefined &&
+        typeof renderImage === "string" &&
+        renderImage.length <= MAX_IMAGE_CHARS &&
+        parseImageDataUrl(renderImage) !== null
+      )
+    ) {
+      return res.status(400).json({
+        error: "renderImage must be a base64 JPEG/PNG/WebP data URL, sent with currentCode",
       });
     }
     if (format !== undefined && !FORMATS.includes(format)) {
@@ -245,6 +381,7 @@ export function createApp(config: ServerConfig) {
       currentCode,
       fonts,
       images,
+      renderImage,
       signal: abort.signal,
     };
 

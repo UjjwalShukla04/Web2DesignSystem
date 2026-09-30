@@ -204,9 +204,10 @@ export const ProviderSettings = ({
                     className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-blue-600"
                   />
                   <span>
-                    Send section screenshots to the AI
+                    Send screenshots to the AI
                     <span className="block text-xs text-gray-500 dark:text-gray-400">
-                      Much closer match to the original design; uses a few more tokens.
+                      The original sections, and how your code looks when you ask for a change.
+                      Much closer results; uses a few more tokens.
                     </span>
                   </span>
                 </label>

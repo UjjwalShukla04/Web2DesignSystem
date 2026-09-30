@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Capture this page</title>
+  <style>
+    :root { color-scheme: light dark; --fg: #111827; --muted: #6b7280; --bg: #fff; --border: #e5e7eb; --field: #f9fafb; --accent: #2563eb; --err: #b91c1c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #f3f4f6; --muted: #9ca3af; --bg: #111827; --border: #374151; --field: #030712; --accent: #3b82f6; --err: #f87171; }
+    }
+    body { margin: 0; width: 320px; font: 13px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+    main { padding: 14px; display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 15px; }
+    p { margin: 0; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .consent { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+    .consent input { margin-top: 2px; }
+    button { font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 12px; border: 1px solid var(--border); background: var(--field); color: var(--fg); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #status { min-height: 1.45em; }
+    #status.error { color: var(--err); }
+    details { border-top: 1px solid var(--border); padding-top: 10px; }
+    summary { cursor: pointer; font-weight: 600; }
+    label.field { display: grid; gap: 3px; margin-top: 8px; font-size: 12px; }
+    input[type=url], input[type=password] { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--field); color: var(--fg); }
+    .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div>
+      <h1>Capture this page</h1>
+      <p class="muted">Copies the page's sections and a screenshot exactly as you see them, including pages you're logged in to, and opens them in the app.</p>
+    </div>
+
+    <label class="consent">
+      <input type="checkbox" id="consent">
+      <span>I own this page or have permission to copy its design, and I'll use the result for my own project.</span>
+    </label>
+
+    <button id="capture" class="primary" disabled>Capture page</button>
+    <p id="status" role="status" aria-live="polite"></p>
+
+    <details id="settings">
+      <summary>Settings</summary>
+      <label class="field">App address
+        <input type="url" id="appUrl" placeholder="http://localhost:3000" required>
+      </label>
+      <label class="field">Backend address
+        <input type="url" id="backendUrl" placeholder="http://localhost:4000" required>
+      </label>
+      <label class="field">Access Code (if the server has one)
+        <input type="password" id="accessCode" autocomplete="off">
+      </label>
+      <div class="row">
+        <button id="save">Save</button>
+        <span id="saved" class="muted"></span>
+      </div>
+    </details>
+    <p class="muted">Nothing is sent until you click Capture. Captures are kept on the server for 30 minutes.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

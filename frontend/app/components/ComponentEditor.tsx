@@ -8,6 +8,7 @@ import {
   Columns,
   Copy,
   Download,
+  Gauge,
   GitCompareArrows,
   Monitor,
   MoveHorizontal,
@@ -20,6 +21,7 @@ import {
   TriangleAlert,
   Undo2,
   WandSparkles,
+  X,
 } from "lucide-react";
 import {
   SandpackProvider,
@@ -255,6 +257,10 @@ export const ComponentEditor = ({
   dark,
   lastUsage,
   projectCostUsd,
+  busyMessage,
+  notice,
+  onDismissNotice,
+  fidelity,
 }: {
   format: OutputFormat; // Format the code was generated in
   kind: "component" | "page"; // One section, or several combined
@@ -280,6 +286,10 @@ export const ComponentEditor = ({
   dark: boolean; // Resolved theme, for Sandpack's own theme
   lastUsage: Usage | null; // Tokens and estimated cost of the last AI request
   projectCostUsd: number; // Estimated cost of this project so far
+  busyMessage?: string | null; // Replaces the default message while the AI works
+  notice?: string | null; // Information for the user, e.g. an Auto-improve result
+  onDismissNotice?: () => void;
+  fidelity?: React.ReactNode; // The match score badge
 }) => {
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [layout, setLayout] = usePersistentState<"horizontal" | "vertical" | "compare">("layout", "horizontal");
@@ -363,11 +373,12 @@ export const ComponentEditor = ({
     : "";
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white">
+    // Exactly one screen tall (dvh: phones' browser bars included); only the panes inside scroll.
+    <div className="h-dvh overflow-hidden flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white">
       {/* Header */}
       {/* relative z-30: backdrop-blur creates a stacking context, so without it the
           settings popover would open underneath the editor below. */}
-      <header className="relative z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-3 sm:px-6 backdrop-blur bg-white/80 border-gray-200 dark:bg-gray-900/50 dark:border-gray-800">
+      <header className="relative z-30 shrink-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-2 sm:px-6 backdrop-blur bg-white/80 border-gray-200 dark:bg-gray-900/50 dark:border-gray-800">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
           <button
             type="button"
@@ -384,6 +395,7 @@ export const ComponentEditor = ({
           <span className="rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
             {config.label}
           </span>
+          {fidelity}
           {lastUsage && (
             <span
               className="hidden sm:inline rounded px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
@@ -484,7 +496,7 @@ export const ComponentEditor = ({
 
       {/* Preview error with a one-click AI fix */}
       {previewError && !isRefining && (
-        <div role="alert" className="mx-3 sm:mx-4 mt-4 flex flex-wrap sm:flex-nowrap items-start gap-3 rounded-lg border p-3 text-sm border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/60 dark:text-red-200">
+        <div role="alert" className="shrink-0 mx-3 sm:mx-4 mt-2 sm:mt-3 flex flex-wrap sm:flex-nowrap items-start gap-3 rounded-lg border p-3 text-sm border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/60 dark:text-red-200">
           <TriangleAlert className="w-5 h-5 shrink-0" aria-hidden />
           <p className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap line-clamp-4">{previewError}</p>
           <button
@@ -497,12 +509,23 @@ export const ComponentEditor = ({
         </div>
       )}
 
+      {notice && !isRefining && (
+        <div role="status" className="shrink-0 mx-3 sm:mx-4 mt-2 sm:mt-3 flex items-start gap-3 rounded-lg border p-3 text-sm border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-100">
+          <Gauge className="w-5 h-5 shrink-0" aria-hidden />
+          <p className="min-w-0 flex-1">{notice}</p>
+          {onDismissNotice && (
+            <button type="button" onClick={onDismissNotice} className="shrink-0 rounded p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900" aria-label="Dismiss">
+              <X className="w-4 h-4" aria-hidden />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Content */}
-      <div className="flex-1 p-2 sm:p-4 relative">
-        {/* Full width container for Sandpack with resize capability */}
+      <div className="relative min-h-0 flex-1 p-2 sm:p-3">
+        {/* Sandpack fills the space between the header and the change bar */}
         <div
-          className="relative w-full flex flex-col rounded-lg overflow-hidden resize-y border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950"
-          style={{ height: isMobile ? "72vh" : "85vh", minHeight: isMobile ? "420px" : "500px" }}
+          className="relative h-full w-full flex flex-col rounded-lg overflow-hidden border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950"
         >
           <SandpackProvider
             key={format} // a different template needs a fresh Sandpack
@@ -603,7 +626,7 @@ export const ComponentEditor = ({
         {isRefining && (
           <div className="absolute inset-2 sm:inset-4 z-10 flex items-center justify-center rounded-lg backdrop-blur-sm p-4 sm:p-6 bg-white/85 dark:bg-gray-950/85">
             <div className="w-full max-w-2xl">
-              <BusyNotice message="AI is applying your changes…" onCancel={onCancelRefine}>
+              <BusyNotice message={busyMessage || "AI is applying your changes…"} onCancel={onCancelRefine}>
                 <StreamingOutput text={refineText} />
               </BusyNotice>
             </div>
@@ -612,7 +635,7 @@ export const ComponentEditor = ({
       </div>
 
       {/* Chat / Refinement Bar */}
-      <div className="h-auto border-t p-3 sm:p-4 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <div className="shrink-0 border-t px-3 py-2 sm:py-3 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
         <div className="max-w-4xl mx-auto w-full">
           <form onSubmit={handleRefine} className="relative flex items-center gap-2">
             <div className="absolute left-4 text-gray-400 dark:text-gray-500">
@@ -622,7 +645,7 @@ export const ComponentEditor = ({
               type="text"
               aria-label="Describe changes to the component"
               placeholder={isMobile ? "Describe changes…" : "Describe changes (e.g., 'Make the background dark', 'Add more padding')..."}
-              className="w-full rounded-xl border pl-12 pr-14 py-3.5 sm:py-4 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 dark:bg-gray-900 dark:border-gray-800 dark:text-white dark:placeholder-gray-500"
+              className="w-full rounded-xl border pl-12 pr-14 py-2.5 sm:py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 dark:bg-gray-900 dark:border-gray-800 dark:text-white dark:placeholder-gray-500"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               maxLength={2000}
